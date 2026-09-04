@@ -280,12 +280,12 @@ app.patch('/api/admin/feedback/:id',auth,role(['admin']),(req,res)=>{
     if(result.changes!==1)return res.status(404).json({error:'Opinión no encontrada'});
     audit(req,'feedback_updated','feedback',id);res.json({ok:true,status,severity});
 });
-app.get('/api/restaurants',(req,res)=>{const registrados=db.prepare(`SELECT r.id,r.name,r.description,r.address,r.phone,r.image,r.category,r.priority,r.featured,
+app.get('/api/restaurants',(req,res)=>{const registrados=db.prepare(`SELECT r.id,r.name,r.description,r.address,r.phone,r.image,r.category,r.priority,r.featured,r.operational_status,r.prep_minutes,r.special_hours,
     ROUND(AVG(rv.restaurant_rating),1) AS rating,COUNT(rv.id) AS ratingCount,
     'registered' AS listingType,'Verificado' AS verificationStatus,NULL AS sourceUrl
     FROM restaurants r LEFT JOIN order_reviews rv ON rv.restaurant_id=r.id WHERE r.active=1
     GROUP BY r.id`).all();const directorio=db.prepare("SELECT 'directory-' || id AS id,name,description,address,phone,NULL AS image,category,priority,featured,NULL AS rating,0 AS ratingCount,'directory' AS listingType,verification_status AS verificationStatus,source_url AS sourceUrl FROM directory_entries WHERE active=1").all();res.json([...registrados,...directorio].sort((a,b)=>Number(b.featured)-Number(a.featured)||Number(b.priority)-Number(a.priority)||(Number(b.rating)||0)-(Number(a.rating)||0)||a.name.localeCompare(b.name,'es')))});
-app.get('/api/restaurants/:id/menu',(req,res)=>{const id=String(req.params.id);if(id.startsWith('directory-')){const directoryId=Number(id.replace('directory-',''));const r=db.prepare('SELECT id,name,category,description,address,phone,hours,source_url,verification_status FROM directory_entries WHERE id=? AND active=1').get(directoryId);if(!r)return res.status(404).json({error:'No encontrado'});return res.json({restaurant:{...r,id,listingType:'directory',sourceUrl:r.source_url,verificationStatus:r.verification_status},products:[]})}let r=db.prepare(`SELECT r.id,r.name,r.category,r.description,r.address,r.phone,r.image,ROUND(AVG(rv.restaurant_rating),1) rating,COUNT(rv.id) ratingCount FROM restaurants r LEFT JOIN order_reviews rv ON rv.restaurant_id=r.id WHERE r.id=? AND r.active=1 GROUP BY r.id`).get(req.params.id);if(!r)return res.status(404).json({error:'No encontrado'});res.json({restaurant:{...r,listingType:'registered',verificationStatus:'Verificado'},products:db.prepare('SELECT * FROM products WHERE restaurant_id=? AND available=1').all(r.id)})});
+app.get('/api/restaurants/:id/menu',(req,res)=>{const id=String(req.params.id);if(id.startsWith('directory-')){const directoryId=Number(id.replace('directory-',''));const r=db.prepare('SELECT id,name,category,description,address,phone,hours,source_url,verification_status FROM directory_entries WHERE id=? AND active=1').get(directoryId);if(!r)return res.status(404).json({error:'No encontrado'});return res.json({restaurant:{...r,id,listingType:'directory',sourceUrl:r.source_url,verificationStatus:r.verification_status},products:[]})}let r=db.prepare(`SELECT r.id,r.name,r.category,r.description,r.address,r.phone,r.image,r.operational_status,r.prep_minutes,r.special_hours,ROUND(AVG(rv.restaurant_rating),1) rating,COUNT(rv.id) ratingCount FROM restaurants r LEFT JOIN order_reviews rv ON rv.restaurant_id=r.id WHERE r.id=? AND r.active=1 GROUP BY r.id`).get(req.params.id);if(!r)return res.status(404).json({error:'No encontrado'});res.json({restaurant:{...r,estimatedPrepMinutes:Number(r.prep_minutes)+(r.operational_status==='saturated'?20:0),listingType:'registered',verificationStatus:'Verificado'},products:db.prepare('SELECT * FROM products WHERE restaurant_id=? AND available=1').all(r.id)})});
 const distanceKm=(lat1,lng1,lat2,lng2)=>{const rad=Math.PI/180;const a=Math.sin((lat2-lat1)*rad/2)**2+Math.cos(lat1*rad)*Math.cos(lat2*rad)*Math.sin((lng2-lng1)*rad/2)**2;return 6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));};
 const deliveryQuote=(restaurant,lat,lng)=>{
     if(restaurant.latitude===null||restaurant.latitude===undefined||restaurant.longitude===null||restaurant.longitude===undefined||!Number.isFinite(Number(restaurant.latitude))||!Number.isFinite(Number(restaurant.longitude))){return {distanceKm:null,deliveryFee:35};}
@@ -310,8 +310,9 @@ app.post('/api/orders',auth,role(['customer']),rateLimit('orders',12,10*60*1000)
     if(existing)return res.json({orderId:existing.id,total:existing.total,subtotal:existing.subtotal,deliveryFee:existing.delivery_fee,distanceKm:existing.distance_km,paymentStatus:existing.payment_status,repeated:true});
     const lat=Number(deliveryLatitude),lng=Number(deliveryLongitude);
     if(!Number.isFinite(lat)||lat < -90||lat > 90||!Number.isFinite(lng)||lng < -180||lng > 180)return res.status(400).json({error:'Selecciona una ubicación válida para la entrega'});
-    const restaurant=db.prepare('SELECT id,latitude,longitude FROM restaurants WHERE id=? AND active=1').get(restaurantId);
+    const restaurant=db.prepare('SELECT id,latitude,longitude,operational_status,prep_minutes FROM restaurants WHERE id=? AND active=1').get(restaurantId);
     if(!restaurant)return res.status(404).json({error:'Restaurante no disponible'});
+    if(['closed','paused'].includes(restaurant.operational_status))return res.status(409).json({error:restaurant.operational_status==='paused'?'El restaurante pausó temporalmente los pedidos':'El restaurante está cerrado'});
     const getProduct=db.prepare('SELECT id,name,price,available FROM products WHERE id=? AND restaurant_id=?');
     const normalized=[];let subtotal=0;
     for(const item of items){const product=getProduct.get(item.productId,restaurantId);const quantity=Number(item.quantity);if(!product||!product.available||!Number.isInteger(quantity)||quantity<1||quantity>30)return res.status(400).json({error:'Producto o cantidad inválida'});subtotal+=Number(product.price)*quantity;normalized.push({...product,quantity});}
@@ -319,9 +320,10 @@ app.post('/api/orders',auth,role(['customer']),rateLimit('orders',12,10*60*1000)
     const quote=deliveryQuote(restaurant,lat,lng);
     const total=Math.round((subtotal+quote.deliveryFee)*100)/100;
     const paymentStatus=paymentMethod==='Transferencia'?'awaiting_confirmation':'pay_on_delivery';
-    const orderId=db.transaction(()=>{const order=db.prepare('INSERT INTO orders(customer_id,restaurant_id,address,payment_method,total,delivery_latitude,delivery_longitude,subtotal,delivery_fee,distance_km,payment_status,client_request_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(req.user.id,restaurantId,String(address).trim().slice(0,500),paymentMethod,total,lat,lng,subtotal,quote.deliveryFee,quote.distanceKm,paymentStatus,clientRequestId);const id=Number(order.lastInsertRowid);const insert=db.prepare('INSERT INTO order_items(order_id,product_id,product_name,unit_price,quantity) VALUES(?,?,?,?,?)');normalized.forEach(item=>insert.run(id,item.id,item.name,item.price,item.quantity));recordOrderStatus(id,null,'received',req.user,'Pedido creado por el cliente');return id;})();
+    const estimatedPrepMinutes=Math.min(180,Math.max(5,Number(restaurant.prep_minutes)||30)+(restaurant.operational_status==='saturated'?20:0));
+    const orderId=db.transaction(()=>{const order=db.prepare('INSERT INTO orders(customer_id,restaurant_id,address,payment_method,total,delivery_latitude,delivery_longitude,subtotal,delivery_fee,distance_km,payment_status,client_request_id,estimated_prep_minutes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run(req.user.id,restaurantId,String(address).trim().slice(0,500),paymentMethod,total,lat,lng,subtotal,quote.deliveryFee,quote.distanceKm,paymentStatus,clientRequestId,estimatedPrepMinutes);const id=Number(order.lastInsertRowid);const insert=db.prepare('INSERT INTO order_items(order_id,product_id,product_name,unit_price,quantity) VALUES(?,?,?,?,?)');normalized.forEach(item=>insert.run(id,item.id,item.name,item.price,item.quantity));recordOrderStatus(id,null,'received',req.user,'Pedido creado por el cliente');return id;})();
     audit(req,'order_created','order',orderId);
-    res.status(201).json({orderId,total,subtotal,deliveryFee:quote.deliveryFee,distanceKm:quote.distanceKm,paymentStatus});
+    res.status(201).json({orderId,total,subtotal,deliveryFee:quote.deliveryFee,distanceKm:quote.distanceKm,paymentStatus,estimatedPrepMinutes});
 });
 app.get('/api/orders/my',auth,role(['customer']),(req,res)=>{let os=db.prepare(`SELECT o.*,r.name restaurant_name,rv.restaurant_rating,rv.delivery_rating,rv.comment review_comment,rv.tip_amount,rv.tip_method FROM orders o JOIN restaurants r ON r.id=o.restaurant_id LEFT JOIN order_reviews rv ON rv.order_id=o.id WHERE o.customer_id=? ORDER BY o.id DESC`).all(req.user.id);let it=db.prepare('SELECT * FROM order_items WHERE order_id=?');res.json(os.map(o=>({...o,items:it.all(o.id)})))});
 app.post('/api/auth/google',rateLimit('google-login',10,15*60*1000),async(req,res)=>{
@@ -452,6 +454,13 @@ app.put('/api/restaurant/profile',auth,role(['restaurant']),(req,res)=>{
     if(image&&!image.startsWith('/uploads/'))return res.status(400).json({error:'Imagen inválida'});
     db.prepare('UPDATE restaurants SET image=? WHERE owner_id=?').run(image,req.user.id);
     res.json({ok:true,image});
+});
+app.put('/api/restaurant/availability',auth,role(['restaurant']),(req,res)=>{
+    const status=String(req.body.status||''),prepMinutes=Number(req.body.prepMinutes),specialHours=String(req.body.specialHours||'').trim().slice(0,300);
+    if(!['open','closed','saturated','paused'].includes(status)||!Number.isInteger(prepMinutes)||prepMinutes<5||prepMinutes>180)return res.status(400).json({error:'Selecciona un estado y un tiempo entre 5 y 180 minutos'});
+    const result=db.prepare('UPDATE restaurants SET operational_status=?,prep_minutes=?,special_hours=? WHERE owner_id=?').run(status,prepMinutes,specialHours,req.user.id);
+    if(result.changes!==1)return res.status(404).json({error:'Restaurante no encontrado'});
+    audit(req,'restaurant_availability_updated','restaurant',null);res.json({ok:true,status,prepMinutes,estimatedPrepMinutes:prepMinutes+(status==='saturated'?20:0),specialHours});
 });
 
 app.put('/api/restaurant/location',auth,role(['restaurant']),(req,res)=>{

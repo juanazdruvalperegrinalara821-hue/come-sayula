@@ -275,6 +275,17 @@ header button{
 
     </div>
 
+    <section class="gestion-productos" style="margin-bottom:20px">
+        <div class="cabecera-seccion"><div><h2>🟢 Disponibilidad del negocio</h2><p style="color:#777;margin-top:5px">Controla si puedes recibir pedidos y el tiempo aproximado.</p></div><strong id="estadoOperacion">Cargando…</strong></div>
+        <form class="form-producto" onsubmit="guardarDisponibilidad(event)">
+            <select id="estadoNegocio" required><option value="open">🟢 Abierto</option><option value="saturated">🟠 Saturado</option><option value="paused">⏸️ Pedidos pausados</option><option value="closed">🔴 Cerrado</option></select>
+            <input id="minutosPreparacion" type="number" min="5" max="180" step="5" required placeholder="Minutos de preparación">
+            <input id="horarioEspecial" class="descripcion" maxlength="300" placeholder="Horario especial (opcional)">
+            <button type="submit">Guardar disponibilidad</button>
+        </form>
+        <p id="estimadoOperacion" style="margin-top:10px;color:#6d625b"></p>
+    </section>
+
     <section class="gestion-productos">
         <div class="cabecera-seccion"><div><h2>🍔 Mi menú</h2><p style="color:#777;margin-top:5px">Crea productos y controla lo que está disponible.</p></div><strong id="totalProductos">0 productos</strong></div>
         <form class="form-producto" onsubmit="guardarProducto(event)">
@@ -433,8 +444,14 @@ function mostrarRestaurante(datos){
     document.getElementById('estadoUbicacionRestaurante').textContent=datos.latitude!==null&&datos.latitude!==undefined&&datos.longitude!==null&&datos.longitude!==undefined&&Number.isFinite(Number(datos.latitude))&&Number.isFinite(Number(datos.longitude))
         ? '✅ Ubicación configurada para calcular envíos'
         : '⚠️ Configura la ubicación para calcular el costo de envío';
+    const nombres={open:'🟢 Abierto',saturated:'🟠 Saturado',paused:'⏸️ Pedidos pausados',closed:'🔴 Cerrado'};
+    estadoNegocio.value=datos.operational_status||'open';minutosPreparacion.value=datos.prep_minutes||30;horarioEspecial.value=datos.special_hours||'';
+    estadoOperacion.textContent=nombres[estadoNegocio.value]||nombres.open;
+    estimadoOperacion.textContent=`Tiempo mostrado al cliente: ${Number(minutosPreparacion.value)+(estadoNegocio.value==='saturated'?20:0)} minutos${datos.special_hours?' · '+datos.special_hours:''}`;
 
 }
+
+async function guardarDisponibilidad(event){event.preventDefault();try{const result=await solicitudProducto('/api/restaurant/availability','PUT',{status:estadoNegocio.value,prepMinutes:Number(minutosPreparacion.value),specialHours:horarioEspecial.value});alert('✅ Disponibilidad actualizada. Tiempo estimado: '+result.estimatedPrepMinutes+' minutos.');await cargarPanel()}catch(error){alert('❌ '+error.message)}}
 
 function mostrarProductos(productos){
     const contenedor=document.getElementById('productos');

@@ -639,6 +639,7 @@ async function cargarRestaurantes(){
                                 ? `⭐ ${Number(restaurante.rating).toFixed(1)} · ${Number(restaurante.ratingCount)} calificaciones`
                                 : '⭐ Nuevo'}
                     </div>
+                    ${restaurante.listingType==='registered'?`<div style="margin:8px 0;font-weight:bold;color:${['closed','paused'].includes(restaurante.operational_status)?'#a61b1b':restaurante.operational_status==='saturated'?'#a15c00':'#16733b'}">${restaurante.operational_status==='closed'?'🔴 Cerrado':restaurante.operational_status==='paused'?'⏸️ Pedidos pausados':restaurante.operational_status==='saturated'?'🟠 Saturado · '+(Number(restaurante.prep_minutes)+20)+' min aprox.':'🟢 Abierto · '+Number(restaurante.prep_minutes||30)+' min aprox.'}</div>`:''}
 
                     <button
                         class="restaurant-button"
@@ -815,6 +816,7 @@ async function abrirRestaurante(id,nombre){
         const datos = await respuesta.json();
         const menu = datos.products || [];
         const esDirectorio = datos.restaurant?.listingType === 'directory';
+        const noDisponible=['closed','paused'].includes(datos.restaurant?.operational_status);
 
         const restaurante = document.querySelector(
             `.restaurant[data-id="${id}"]`
@@ -922,8 +924,9 @@ async function abrirRestaurante(id,nombre){
                         </h1>
 
                         <p>
-                            Selecciona los productos que quieras pedir.
+                            ${noDisponible?'En este momento no recibe pedidos.':`Tiempo estimado de preparación: ${Number(datos.restaurant?.estimatedPrepMinutes||30)} minutos.`}
                         </p>
+                        ${datos.restaurant?.special_hours?`<p><strong>Horario especial:</strong> ${escapar(datos.restaurant.special_hours)}</p>`:''}
 
                     </div>
 
@@ -1026,6 +1029,7 @@ async function abrirRestaurante(id,nombre){
                             </strong>
 
                             <button
+                                ${noDisponible?'disabled':''}
                                 onclick='agregarProducto(${JSON.stringify(producto)}, ${id}, ${JSON.stringify(nombre)})'
                                 style="
                                     border:none;
@@ -1033,11 +1037,12 @@ async function abrirRestaurante(id,nombre){
                                     color:white;
                                     padding:10px 15px;
                                     border-radius:11px;
-                                    cursor:pointer;
+                                    cursor:${noDisponible?'not-allowed':'pointer'};
+                                    opacity:${noDisponible?'.55':'1'};
                                     font-weight:bold;
                                 "
                             >
-                                + Agregar
+                                ${noDisponible?'No disponible':'+ Agregar'}
                             </button>
 
                         </div>

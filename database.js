@@ -81,6 +81,9 @@ ensureColumn('restaurants','longitude','REAL');
 ensureColumn('restaurants','category',"TEXT NOT NULL DEFAULT 'Otros'");
 ensureColumn('restaurants','priority','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('restaurants','featured','INTEGER NOT NULL DEFAULT 0');
+ensureColumn('restaurants','operational_status',"TEXT NOT NULL DEFAULT 'open'");
+ensureColumn('restaurants','prep_minutes','INTEGER NOT NULL DEFAULT 30');
+ensureColumn('restaurants','special_hours','TEXT');
 ensureColumn('directory_entries','priority','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('directory_entries','featured','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('orders','subtotal','REAL');
@@ -88,6 +91,7 @@ ensureColumn('orders','delivery_fee','REAL');
 ensureColumn('orders','distance_km','REAL');
 ensureColumn('orders','payment_status',"TEXT NOT NULL DEFAULT 'pending'");
 ensureColumn('orders','client_request_id','TEXT');
+ensureColumn('orders','estimated_prep_minutes','INTEGER');
 
 db.exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_customer_request
