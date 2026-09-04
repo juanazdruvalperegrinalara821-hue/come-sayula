@@ -1830,7 +1830,7 @@ function cuenta(){
             'Correo: ' + correo + '\n\n';
 
         // 🍽️ CUENTA DEL RESTAURANTE
-        if(usuario.role === 'restaurant'){
+        if(['restaurant','restaurant_employee'].includes(usuario.role)){
 
             menuCuenta +=
                 '🍽️ 1 = Panel del restaurante\n' +

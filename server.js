@@ -74,6 +74,21 @@ const auth=(req,res,next)=>{
     }catch(e){res.status(401).json({error:'Sesión inválida o vencida'});}
 };
 const role=roles=>(req,res,next)=>roles.includes(req.user.role)?next():res.status(403).json({error:'Sin permisos'});
+const getRestaurantAccess=userId=>db.prepare(`SELECT r.*,
+    CASE WHEN r.owner_id=? THEN 1 ELSE 0 END is_owner,
+    CASE WHEN r.owner_id=? THEN 1 ELSE COALESCE(m.can_manage_orders,0) END can_manage_orders,
+    CASE WHEN r.owner_id=? THEN 1 ELSE COALESCE(m.can_manage_products,0) END can_manage_products,
+    CASE WHEN r.owner_id=? THEN 1 ELSE COALESCE(m.can_view_finance,0) END can_view_finance
+    FROM restaurants r LEFT JOIN restaurant_members m ON m.restaurant_id=r.id AND m.user_id=? AND m.active=1
+    WHERE r.owner_id=? OR m.user_id=? LIMIT 1`).get(userId,userId,userId,userId,userId,userId,userId);
+const restaurantAccess=permission=>(req,res,next)=>{
+    if(!['restaurant','restaurant_employee'].includes(req.user.role))return res.status(403).json({error:'Sin permisos'});
+    const access=getRestaurantAccess(req.user.id);
+    if(!access)return res.status(403).json({error:'La cuenta no está vinculada a un restaurante activo'});
+    if(permission&&!access[permission])return res.status(403).json({error:'El dueño no habilitó este permiso para tu cuenta'});
+    req.restaurant=access;next();
+};
+const restaurantOwner=(req,res,next)=>req.restaurant?.is_owner?next():res.status(403).json({error:'Esta acción está reservada al dueño del restaurante'});
 const audit=(req,action,type,id)=>{try{db.prepare('INSERT INTO audit_logs(user_id,action,entity_type,entity_id,ip_address) VALUES(?,?,?,?,?)').run(req.user?.id||null,action,type||null,id||null,String(req.ip||'').slice(0,64));}catch(e){console.error('AUDIT ERROR',e.message);}};
 const recordOrderStatus=(orderId,fromStatus,toStatus,user,note='')=>db.prepare('INSERT INTO order_status_history(order_id,from_status,to_status,actor_user_id,actor_role,note) VALUES(?,?,?,?,?,?)').run(orderId,fromStatus||null,toStatus,user?.id||null,user?.role||'system',String(note||'').slice(0,300));
 const deliveryPinFor=orderId=>{const hex=crypto.createHmac('sha256',SECRET).update('delivery:'+orderId).digest('hex');return String(parseInt(hex.slice(0,8),16)%10000).padStart(4,'0');};
@@ -85,8 +100,8 @@ function aiContextFor(user){
         const orders=db.prepare("SELECT id,status,payment_method,payment_status,total,created_at FROM orders WHERE customer_id=? ORDER BY id DESC LIMIT 8").all(user.id);
         return {restaurants,products,myRecentOrders:orders};
     }
-    if(user.role==='restaurant'){
-        const restaurant=db.prepare('SELECT id,name,description,address,active,latitude,longitude FROM restaurants WHERE owner_id=?').get(user.id);
+    if(['restaurant','restaurant_employee'].includes(user.role)){
+        const access=getRestaurantAccess(user.id),restaurant=access&&db.prepare('SELECT id,name,description,address,active,latitude,longitude FROM restaurants WHERE id=?').get(access.id);
         if(!restaurant)return {restaurant:null};
         const products=db.prepare('SELECT id,name,price,available FROM products WHERE restaurant_id=? ORDER BY id DESC LIMIT 100').all(restaurant.id);
         const orders=db.prepare('SELECT id,status,payment_method,payment_status,subtotal,delivery_fee,total,created_at FROM orders WHERE restaurant_id=? ORDER BY id DESC LIMIT 30').all(restaurant.id);
@@ -111,6 +126,7 @@ function aiContextFor(user){
 const aiRoleInstructions={
     customer:'Ayuda a elegir productos reales disponibles, usar el carrito, entender pagos y seguir pedidos propios.',
     restaurant:'Ayuda a completar el perfil, mejorar el menú, interpretar pedidos y sugerir acciones operativas.',
+    restaurant_employee:'Ayuda a atender pedidos y productos únicamente con los permisos otorgados por el dueño.',
     delivery:'Ayuda a entender pedidos disponibles y asignados, estados de entrega y procedimientos seguros.',
     admin:'Resume la operación, detecta datos incompletos o estados anómalos y propone pasos de diagnóstico.'
 };
@@ -139,7 +155,7 @@ app.post('/api/auth/login',rateLimit('login',10,15*60*1000),async(req,res)=>{
         return res.status(401).json({error:'Correo o contraseña incorrectos'});
     }
     if(user.account_status!=='approved')return res.status(403).json({error:user.account_status==='pending'?'Tu cuenta está pendiente de aprobación administrativa':'Tu cuenta está suspendida; comunícate con soporte'});
-    if(selectedRole&&user.role!==selectedRole){
+    if(selectedRole&&user.role!==selectedRole&&!(selectedRole==='restaurant'&&user.role==='restaurant_employee')){
         return res.status(403).json({
             error:'Esta cuenta no corresponde al tipo de acceso seleccionado'
         });
@@ -226,20 +242,22 @@ const canUseOrder=(user,orderId)=>{
     if(!orderId)return true;
     if(user.role==='customer')return Boolean(db.prepare('SELECT id FROM orders WHERE id=? AND customer_id=?').get(orderId,user.id));
     if(user.role==='restaurant')return Boolean(db.prepare('SELECT o.id FROM orders o JOIN restaurants r ON r.id=o.restaurant_id WHERE o.id=? AND r.owner_id=?').get(orderId,user.id));
+    if(user.role==='restaurant_employee'){const access=getRestaurantAccess(user.id);return Boolean(access&&db.prepare('SELECT id FROM orders WHERE id=? AND restaurant_id=?').get(orderId,access.id));}
     if(user.role==='delivery')return Boolean(db.prepare('SELECT order_id FROM delivery_assignments WHERE order_id=? AND delivery_user_id=?').get(orderId,user.id));
     return false;
 };
 const issueTypes=['missing_product','wrong_order','delayed','customer_unavailable','restaurant_closed','cancellation','help'];
 
-app.get('/api/feedback/orders',auth,role(['customer','restaurant','delivery']),(req,res)=>{
+app.get('/api/feedback/orders',auth,role(['customer','restaurant','restaurant_employee','delivery']),(req,res)=>{
     let rows=[];
     if(req.user.role==='customer')rows=db.prepare('SELECT id,status,created_at FROM orders WHERE customer_id=? ORDER BY id DESC LIMIT 30').all(req.user.id);
     if(req.user.role==='restaurant')rows=db.prepare('SELECT o.id,o.status,o.created_at FROM orders o JOIN restaurants r ON r.id=o.restaurant_id WHERE r.owner_id=? ORDER BY o.id DESC LIMIT 30').all(req.user.id);
+    if(req.user.role==='restaurant_employee'){const access=getRestaurantAccess(req.user.id);if(access)rows=db.prepare('SELECT id,status,created_at FROM orders WHERE restaurant_id=? ORDER BY id DESC LIMIT 30').all(access.id);}
     if(req.user.role==='delivery')rows=db.prepare('SELECT o.id,o.status,o.created_at FROM orders o JOIN delivery_assignments da ON da.order_id=o.id WHERE da.delivery_user_id=? ORDER BY o.id DESC LIMIT 30').all(req.user.id);
     res.json(rows);
 });
 
-app.post('/api/feedback/upload',auth,role(['customer','restaurant','delivery']),rateLimit('feedback-upload',10,60*60*1000),(req,res)=>{
+app.post('/api/feedback/upload',auth,role(['customer','restaurant','restaurant_employee','delivery']),rateLimit('feedback-upload',10,60*60*1000),(req,res)=>{
     const match=String(req.body.dataUrl||'').match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
     if(!match)return res.status(400).json({error:'Usa una captura PNG, JPG o WEBP'});
     const buffer=Buffer.from(match[2],'base64');
@@ -250,7 +268,7 @@ app.post('/api/feedback/upload',auth,role(['customer','restaurant','delivery']),
     res.status(201).json({url:'/uploads/'+fileName});
 });
 
-app.post('/api/feedback',auth,role(['customer','restaurant','delivery']),rateLimit('feedback-create',12,60*60*1000),(req,res)=>{
+app.post('/api/feedback',auth,role(['customer','restaurant','restaurant_employee','delivery']),rateLimit('feedback-create',12,60*60*1000),(req,res)=>{
     const category=String(req.body.category||''),rating=Number(req.body.rating),comment=String(req.body.comment||'').trim().slice(0,1500),anonymous=req.body.anonymous?1:0,contactAllowed=req.body.contactAllowed?1:0;
     const answers=Array.isArray(req.body.answers)?req.body.answers.map(value=>String(value||'').trim().slice(0,500)).slice(0,6):[];
     const orderId=req.body.orderId?Number(req.body.orderId):null;
@@ -260,8 +278,9 @@ app.post('/api/feedback',auth,role(['customer','restaurant','delivery']),rateLim
     if(screenshotUrl&&!/^\/uploads\/feedback-[a-f0-9-]+\.(png|jpg|webp)$/.test(screenshotUrl))return res.status(400).json({error:'Captura inválida'});
     const trackingCode=crypto.randomBytes(12).toString('hex'),groupKey=feedbackGroupKey(category,comment,answers);
     const contact=anonymous?{}:{name:String(req.user.name||'').slice(0,100),email:String(req.user.email||'').slice(0,254),phone:String(req.user.phone||'').slice(0,30)};
+    const feedbackRole=req.user.role==='restaurant_employee'?'restaurant':req.user.role;
     const result=db.prepare(`INSERT INTO feedback_reports(tracking_code,user_id,user_role,category,rating,answers_json,comment,screenshot_url,order_id,anonymous,contact_allowed,contact_name,contact_email,contact_phone,group_key)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(trackingCode,anonymous?null:req.user.id,req.user.role,category,rating,JSON.stringify(answers),comment,screenshotUrl||null,orderId,anonymous,contactAllowed,contact.name||null,contact.email||null,contact.phone||null,groupKey);
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(trackingCode,anonymous?null:req.user.id,feedbackRole,category,rating,JSON.stringify(answers),comment,screenshotUrl||null,orderId,anonymous,contactAllowed,contact.name||null,contact.email||null,contact.phone||null,groupKey);
     audit(req,'feedback_created','feedback',Number(result.lastInsertRowid));
     res.status(201).json({id:Number(result.lastInsertRowid),trackingCode,status:'received'});
 });
@@ -292,14 +311,14 @@ app.patch('/api/admin/feedback/:id',auth,role(['admin']),(req,res)=>{
     audit(req,'feedback_updated','feedback',id);res.json({ok:true,status,severity});
 });
 
-app.post('/api/order-issues',auth,role(['customer','restaurant','delivery']),rateLimit('order-issue',20,60*60*1000),(req,res)=>{
+app.post('/api/order-issues',auth,role(['customer','restaurant','restaurant_employee','delivery']),rateLimit('order-issue',20,60*60*1000),(req,res)=>{
     const orderId=Number(req.body.orderId),issueType=String(req.body.issueType||''),description=String(req.body.description||'').trim().slice(0,1000);
     if(!Number.isInteger(orderId)||orderId<=0||!issueTypes.includes(issueType))return res.status(400).json({error:'Selecciona un pedido y un tipo de problema'});
     if(!canUseOrder(req.user,orderId))return res.status(403).json({error:'No puedes reportar problemas de ese pedido'});
     const result=db.prepare('INSERT INTO order_issues(order_id,reporter_user_id,reporter_role,issue_type,description) VALUES(?,?,?,?,?)').run(orderId,req.user.id,req.user.role,issueType,description);
     audit(req,'order_issue_created','order_issue',Number(result.lastInsertRowid));res.status(201).json({id:Number(result.lastInsertRowid),status:'open'});
 });
-app.get('/api/order-issues/my',auth,role(['customer','restaurant','delivery']),(req,res)=>res.json(db.prepare('SELECT id,order_id,issue_type,description,status,created_at,updated_at FROM order_issues WHERE reporter_user_id=? ORDER BY id DESC').all(req.user.id)));
+app.get('/api/order-issues/my',auth,role(['customer','restaurant','restaurant_employee','delivery']),(req,res)=>res.json(db.prepare('SELECT id,order_id,issue_type,description,status,created_at,updated_at FROM order_issues WHERE reporter_user_id=? ORDER BY id DESC').all(req.user.id)));
 app.get('/api/admin/order-issues',auth,role(['admin']),(req,res)=>res.json(db.prepare(`SELECT i.*,u.name reporter_name FROM order_issues i LEFT JOIN users u ON u.id=i.reporter_user_id ORDER BY CASE i.status WHEN 'open' THEN 1 WHEN 'reviewing' THEN 2 ELSE 3 END,i.created_at DESC`).all()));
 app.patch('/api/admin/order-issues/:id',auth,role(['admin']),(req,res)=>{const id=Number(req.params.id),status=String(req.body.status||''),notes=String(req.body.adminNotes||'').trim().slice(0,1000);if(!Number.isInteger(id)||!['open','reviewing','resolved'].includes(status))return res.status(400).json({error:'Estado inválido'});const result=db.prepare('UPDATE order_issues SET status=?,admin_notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(status,notes,id);if(result.changes!==1)return res.status(404).json({error:'Reporte no encontrado'});audit(req,'order_issue_updated','order_issue',id);res.json({ok:true,status});});
 
@@ -474,10 +493,14 @@ app.post('/api/auth/google',rateLimit('google-login',10,15*60*1000),async(req,re
         });
     }
 });
-app.get('/api/restaurant/me',auth,role(['restaurant']),(req,res)=>{let r=db.prepare('SELECT * FROM restaurants WHERE owner_id=?').get(req.user.id);let products=db.prepare('SELECT * FROM products WHERE restaurant_id=?').all(r.id);let orders=db.prepare("SELECT o.*,u.name customer_name,u.phone customer_phone,EXISTS(SELECT 1 FROM delivery_assignments da WHERE da.order_id=o.id AND da.status='accepted') AS delivery_assigned FROM orders o JOIN users u ON u.id=o.customer_id WHERE o.restaurant_id=? ORDER BY o.id DESC").all(r.id);let it=db.prepare('SELECT * FROM order_items WHERE order_id=?');res.json({...r,products,orders:orders.map(o=>({...o,items:it.all(o.id)}))})});
-app.get('/api/restaurant/settlement',auth,role(['restaurant']),(req,res)=>{const restaurant=db.prepare('SELECT id FROM restaurants WHERE owner_id=?').get(req.user.id);const rows=db.prepare(`SELECT date(o.created_at) day,COUNT(*) orders_count,ROUND(SUM(f.subtotal),2) sales,ROUND(SUM(f.platform_commission),2) commission,ROUND(SUM(CASE WHEN f.payment_method='Efectivo' THEN f.total_charged ELSE 0 END),2) cash_orders,ROUND(SUM(CASE WHEN f.payment_method!='Efectivo' THEN f.total_charged ELSE 0 END),2) digital_orders,ROUND(SUM(f.restaurant_due),2) restaurant_due,ROUND(SUM(CASE WHEN o.status='cancelled' THEN 1 ELSE 0 END),0) cancellations FROM orders o JOIN order_financials f ON f.order_id=o.id WHERE o.restaurant_id=? AND o.is_demo=0 GROUP BY date(o.created_at) ORDER BY day DESC LIMIT 60`).all(restaurant.id);res.json({commissionPercent:PLATFORM_COMMISSION_PERCENT,days:rows});});
+app.get('/api/restaurant/me',auth,restaurantAccess(),(req,res)=>{const r=req.restaurant,products=db.prepare('SELECT * FROM products WHERE restaurant_id=?').all(r.id),orders=db.prepare("SELECT o.*,u.name customer_name,u.phone customer_phone,EXISTS(SELECT 1 FROM delivery_assignments da WHERE da.order_id=o.id AND da.status='accepted') AS delivery_assigned FROM orders o JOIN users u ON u.id=o.customer_id WHERE o.restaurant_id=? ORDER BY o.id DESC").all(r.id),it=db.prepare('SELECT * FROM order_items WHERE order_id=?');const access={isOwner:Boolean(r.is_owner),canManageOrders:Boolean(r.can_manage_orders),canManageProducts:Boolean(r.can_manage_products),canViewFinance:Boolean(r.can_view_finance)};res.json({...r,access,products:access.canManageProducts||access.isOwner?products:[],orders:access.canManageOrders?orders.map(o=>{const closed=['delivered','cancelled'].includes(o.status);return {...o,customer_phone:closed?null:o.customer_phone,address:closed?'Datos ocultos al cerrar el pedido':o.address,delivery_latitude:closed?null:o.delivery_latitude,delivery_longitude:closed?null:o.delivery_longitude,items:it.all(o.id)}}):[]})});
+app.get('/api/restaurant/settlement',auth,restaurantAccess('can_view_finance'),(req,res)=>{const rows=db.prepare(`SELECT date(o.created_at) day,COUNT(*) orders_count,ROUND(SUM(f.subtotal),2) sales,ROUND(SUM(f.platform_commission),2) commission,ROUND(SUM(CASE WHEN f.payment_method='Efectivo' THEN f.total_charged ELSE 0 END),2) cash_orders,ROUND(SUM(CASE WHEN f.payment_method!='Efectivo' THEN f.total_charged ELSE 0 END),2) digital_orders,ROUND(SUM(f.restaurant_due),2) restaurant_due,ROUND(SUM(CASE WHEN o.status='cancelled' THEN 1 ELSE 0 END),0) cancellations FROM orders o JOIN order_financials f ON f.order_id=o.id WHERE o.restaurant_id=? AND o.is_demo=0 GROUP BY date(o.created_at) ORDER BY day DESC LIMIT 60`).all(req.restaurant.id);res.json({commissionPercent:PLATFORM_COMMISSION_PERCENT,days:rows});});
 
-app.post('/api/restaurant/uploads',auth,role(['restaurant']),(req,res)=>{
+app.get('/api/restaurant/employees',auth,restaurantAccess(),restaurantOwner,(req,res)=>res.json(db.prepare(`SELECT u.id,u.name,u.email,u.phone,u.account_status,m.can_manage_orders,m.can_manage_products,m.can_view_finance,m.active,m.created_at FROM restaurant_members m JOIN users u ON u.id=m.user_id WHERE m.restaurant_id=? ORDER BY m.created_at DESC`).all(req.restaurant.id)));
+app.post('/api/restaurant/employees',auth,restaurantAccess(),restaurantOwner,rateLimit('restaurant-employees',12,60*60*1000),async(req,res)=>{const name=String(req.body.name||'').trim().slice(0,100),email=normalizeEmail(req.body.email),phone=String(req.body.phone||'').trim().slice(0,30),password=String(req.body.password||'');if(!name||!email||password.length<10)return res.status(400).json({error:'Completa nombre, correo y una contraseña de al menos 10 caracteres'});if(db.prepare('SELECT id FROM users WHERE email=?').get(email))return res.status(409).json({error:'Ese correo ya pertenece a otra cuenta'});const id=db.transaction(()=>{const created=db.prepare("INSERT INTO users(name,email,phone,password_hash,role,account_status,email_verified) VALUES(?,?,?,?, 'restaurant_employee','approved',0)").run(name,email,phone,bcrypt.hashSync(password,12));db.prepare('INSERT INTO restaurant_members(user_id,restaurant_id,can_manage_orders,can_manage_products,can_view_finance) VALUES(?,?,?,?,?)').run(created.lastInsertRowid,req.restaurant.id,req.body.canManageOrders===false?0:1,req.body.canManageProducts?1:0,req.body.canViewFinance?1:0);return Number(created.lastInsertRowid)})();audit(req,'restaurant_employee_created','user',id);res.status(201).json({id});});
+app.patch('/api/restaurant/employees/:id',auth,restaurantAccess(),restaurantOwner,(req,res)=>{const id=Number(req.params.id),active=req.body.active===false?0:1;const result=db.prepare('UPDATE restaurant_members SET can_manage_orders=?,can_manage_products=?,can_view_finance=?,active=? WHERE user_id=? AND restaurant_id=?').run(req.body.canManageOrders?1:0,req.body.canManageProducts?1:0,req.body.canViewFinance?1:0,active,id,req.restaurant.id);if(result.changes!==1)return res.status(404).json({error:'Empleado no encontrado'});db.prepare("UPDATE users SET account_status=? WHERE id=? AND role='restaurant_employee'").run(active?'approved':'suspended',id);audit(req,'restaurant_employee_permissions_updated','user',id);res.json({ok:true});});
+
+app.post('/api/restaurant/uploads',auth,restaurantAccess('can_manage_products'),(req,res)=>{
     const match=String(req.body.dataUrl||'').match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
     if(!match)return res.status(400).json({error:'Selecciona una imagen JPG, PNG o WEBP'});
     const buffer=Buffer.from(match[2],'base64');
@@ -490,29 +513,29 @@ app.post('/api/restaurant/uploads',auth,role(['restaurant']),(req,res)=>{
     res.status(201).json({url:'/uploads/'+fileName});
 });
 
-app.put('/api/restaurant/profile',auth,role(['restaurant']),(req,res)=>{
+app.put('/api/restaurant/profile',auth,restaurantAccess(),restaurantOwner,(req,res)=>{
     const image=String(req.body.image||'').trim();
     if(image&&!image.startsWith('/uploads/'))return res.status(400).json({error:'Imagen inválida'});
-    db.prepare('UPDATE restaurants SET image=? WHERE owner_id=?').run(image,req.user.id);
+    db.prepare('UPDATE restaurants SET image=? WHERE id=?').run(image,req.restaurant.id);
     res.json({ok:true,image});
 });
-app.put('/api/restaurant/availability',auth,role(['restaurant']),(req,res)=>{
+app.put('/api/restaurant/availability',auth,restaurantAccess(),restaurantOwner,(req,res)=>{
     const status=String(req.body.status||''),prepMinutes=Number(req.body.prepMinutes),specialHours=String(req.body.specialHours||'').trim().slice(0,300);
     if(!['open','closed','saturated','paused'].includes(status)||!Number.isInteger(prepMinutes)||prepMinutes<5||prepMinutes>180)return res.status(400).json({error:'Selecciona un estado y un tiempo entre 5 y 180 minutos'});
-    const result=db.prepare('UPDATE restaurants SET operational_status=?,prep_minutes=?,special_hours=? WHERE owner_id=?').run(status,prepMinutes,specialHours,req.user.id);
+    const result=db.prepare('UPDATE restaurants SET operational_status=?,prep_minutes=?,special_hours=? WHERE id=?').run(status,prepMinutes,specialHours,req.restaurant.id);
     if(result.changes!==1)return res.status(404).json({error:'Restaurante no encontrado'});
     audit(req,'restaurant_availability_updated','restaurant',null);res.json({ok:true,status,prepMinutes,estimatedPrepMinutes:prepMinutes+(status==='saturated'?20:0),specialHours});
 });
 
-app.put('/api/restaurant/location',auth,role(['restaurant']),(req,res)=>{
+app.put('/api/restaurant/location',auth,restaurantAccess(),restaurantOwner,(req,res)=>{
     const latitude=Number(req.body.latitude),longitude=Number(req.body.longitude);
     if(!Number.isFinite(latitude)||latitude < -90||latitude > 90||!Number.isFinite(longitude)||longitude < -180||longitude > 180)return res.status(400).json({error:'Ubicación inválida'});
-    db.prepare('UPDATE restaurants SET latitude=?,longitude=? WHERE owner_id=?').run(latitude,longitude,req.user.id);
+    db.prepare('UPDATE restaurants SET latitude=?,longitude=? WHERE id=?').run(latitude,longitude,req.restaurant.id);
     audit(req,'restaurant_location_updated','restaurant',null);
     res.json({ok:true,latitude,longitude});
 });
-app.post('/api/restaurant/products',auth,role(['restaurant']),(req,res)=>{
-    const restaurant=db.prepare('SELECT id FROM restaurants WHERE owner_id=?').get(req.user.id);
+app.post('/api/restaurant/products',auth,restaurantAccess('can_manage_products'),(req,res)=>{
+    const restaurant=req.restaurant;
     const name=String(req.body.name||'').trim();
     const description=String(req.body.description||'').trim();
     const image=String(req.body.image||'').trim();
@@ -526,8 +549,8 @@ app.post('/api/restaurant/products',auth,role(['restaurant']),(req,res)=>{
     res.status(201).json(db.prepare('SELECT * FROM products WHERE id=?').get(result.lastInsertRowid));
 });
 
-app.put('/api/restaurant/products/:id',auth,role(['restaurant']),(req,res)=>{
-    const restaurant=db.prepare('SELECT id FROM restaurants WHERE owner_id=?').get(req.user.id);
+app.put('/api/restaurant/products/:id',auth,restaurantAccess('can_manage_products'),(req,res)=>{
+    const restaurant=req.restaurant;
     const name=String(req.body.name||'').trim();
     const description=String(req.body.description||'').trim();
     const image=String(req.body.image||'').trim();
@@ -542,15 +565,15 @@ app.put('/api/restaurant/products/:id',auth,role(['restaurant']),(req,res)=>{
     res.json(db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id));
 });
 
-app.patch('/api/restaurant/products/:id',auth,role(['restaurant']),(req,res)=>{
-    const restaurant=db.prepare('SELECT id FROM restaurants WHERE owner_id=?').get(req.user.id);
+app.patch('/api/restaurant/products/:id',auth,restaurantAccess('can_manage_products'),(req,res)=>{
+    const restaurant=req.restaurant;
     const result=db.prepare('UPDATE products SET available=? WHERE id=? AND restaurant_id=?')
         .run(req.body.available?1:0,req.params.id,restaurant.id);
     if(result.changes!==1)return res.status(404).json({error:'Producto no encontrado'});
     res.json({ok:true});
 });
-app.patch('/api/restaurant/orders/:id',auth,role(['restaurant']),(req,res)=>{
-    const restaurant=db.prepare('SELECT id FROM restaurants WHERE owner_id=?').get(req.user.id);
+app.patch('/api/restaurant/orders/:id',auth,restaurantAccess('can_manage_orders'),(req,res)=>{
+    const restaurant=req.restaurant;
     const order=db.prepare('SELECT id,status FROM orders WHERE id=? AND restaurant_id=?')
         .get(req.params.id,restaurant.id);
     if(!order) return res.status(404).json({error:'Pedido no encontrado'});
@@ -577,8 +600,8 @@ app.patch('/api/restaurant/orders/:id',auth,role(['restaurant']),(req,res)=>{
     audit(req,'restaurant_order_'+req.body.status,'order',order.id);
     res.json({ok:true,status:req.body.status});
 });
-app.patch('/api/restaurant/orders/:id/payment',auth,role(['restaurant']),(req,res)=>{
-    const restaurant=db.prepare('SELECT id FROM restaurants WHERE owner_id=?').get(req.user.id);
+app.patch('/api/restaurant/orders/:id/payment',auth,restaurantAccess('can_manage_orders'),(req,res)=>{
+    const restaurant=req.restaurant;
     const order=db.prepare("SELECT id,payment_method,payment_status,status FROM orders WHERE id=? AND restaurant_id=?").get(req.params.id,restaurant.id);
     if(!order)return res.status(404).json({error:'Pedido no encontrado'});
     if(order.payment_method!=='Transferencia'||order.payment_status!=='awaiting_confirmation')return res.status(409).json({error:'Este pedido no tiene una transferencia pendiente'});

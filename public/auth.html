@@ -97,7 +97,7 @@ async function enviar(evento){
 }
 
 function guardarSesion(datos){sessionStorage.setItem('cs_token',datos.token);sessionStorage.setItem('cs_user',JSON.stringify(datos.user));}
-function redirigir(tipo){location.href=tipo==='restaurant'?'/restaurant.html':tipo==='delivery'?'/delivery.html':tipo==='admin'?'/admin.html':'/home3.html';}
+function redirigir(tipo){location.href=['restaurant','restaurant_employee'].includes(tipo)?'/restaurant.html':tipo==='delivery'?'/delivery.html':tipo==='admin'?'/admin.html':'/home3.html';}
 function mostrarMensaje(texto,tipo=''){const elemento=document.getElementById('mensaje');elemento.textContent=texto;elemento.className='mensaje '+tipo;}
 
 function iniciarGoogle(){
@@ -127,3 +127,4 @@ window.addEventListener('load',iniciarGoogle);
 </script>
 <script src="/pwa-install.js" defer></script></body>
 </html>
+

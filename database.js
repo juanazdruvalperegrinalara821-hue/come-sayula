@@ -161,6 +161,18 @@ CREATE TABLE IF NOT EXISTS delivery_profiles(delivery_user_id INTEGER PRIMARY KE
 CREATE TABLE IF NOT EXISTS delivery_rejections(order_id INTEGER NOT NULL,delivery_user_id INTEGER NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(order_id,delivery_user_id),FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE,FOREIGN KEY(delivery_user_id) REFERENCES users(id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS order_financials(order_id INTEGER PRIMARY KEY,subtotal REAL NOT NULL,delivery_fee REAL NOT NULL,platform_commission REAL NOT NULL DEFAULT 0,tip REAL NOT NULL DEFAULT 0,discount REAL NOT NULL DEFAULT 0,total_charged REAL NOT NULL,payment_method TEXT NOT NULL,payment_status TEXT NOT NULL,restaurant_due REAL NOT NULL,courier_due REAL NOT NULL,settlement_status TEXT NOT NULL DEFAULT 'pending',settled_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS restaurant_subscriptions(restaurant_id INTEGER PRIMARY KEY,registration_fee REAL NOT NULL DEFAULT 50,first_month_fee REAL NOT NULL DEFAULT 100,initial_payment_total REAL NOT NULL DEFAULT 150,registration_paid INTEGER NOT NULL DEFAULT 0,registration_paid_at TEXT,promotion_eligible INTEGER NOT NULL DEFAULT 0,promotion_monthly_fee REAL NOT NULL DEFAULT 100,regular_monthly_fee REAL NOT NULL DEFAULT 200,promotion_months INTEGER NOT NULL DEFAULT 12,promotion_started_at TEXT,terms_accepted_at TEXT,FOREIGN KEY(restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS restaurant_members(
+    user_id INTEGER PRIMARY KEY,
+    restaurant_id INTEGER NOT NULL,
+    can_manage_orders INTEGER NOT NULL DEFAULT 1,
+    can_manage_products INTEGER NOT NULL DEFAULT 0,
+    can_view_finance INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY(restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_restaurant_members_restaurant ON restaurant_members(restaurant_id,active);
 CREATE INDEX IF NOT EXISTS idx_financials_settlement ON order_financials(settlement_status,created_at);
 `);
 
