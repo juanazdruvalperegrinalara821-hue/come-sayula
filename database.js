@@ -197,11 +197,29 @@ CREATE TABLE IF NOT EXISTS push_subscriptions(
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
+CREATE TABLE IF NOT EXISTS settlement_batches(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    restaurant_id INTEGER NOT NULL,
+    period_date TEXT NOT NULL,
+    amount REAL NOT NULL,
+    reference TEXT NOT NULL,
+    proof_url TEXT,
+    paid_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    paid_by_user_id INTEGER,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(restaurant_id) REFERENCES restaurants(id),
+    FOREIGN KEY(paid_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_settlement_batches_restaurant ON settlement_batches(restaurant_id,period_date);
 CREATE INDEX IF NOT EXISTS idx_financials_settlement ON order_financials(settlement_status,created_at);
 `);
 
 ensureColumn('restaurant_subscriptions','first_month_fee','REAL NOT NULL DEFAULT 100');
 ensureColumn('restaurant_subscriptions','initial_payment_total','REAL NOT NULL DEFAULT 150');
+ensureColumn('order_financials','reversal_amount','REAL NOT NULL DEFAULT 0');
+ensureColumn('order_financials','reversed_at','TEXT');
+ensureColumn('order_financials','reversal_reason','TEXT');
+ensureColumn('order_financials','settlement_batch_id','INTEGER');
 db.prepare('UPDATE restaurant_subscriptions SET registration_fee=50,first_month_fee=100,initial_payment_total=150 WHERE registration_fee=150').run();
 
 if(!db.prepare('SELECT id FROM delivery_zones LIMIT 1').get()){
@@ -210,6 +228,7 @@ if(!db.prepare('SELECT id FROM delivery_zones LIMIT 1').get()){
 }
 db.exec(`INSERT OR IGNORE INTO order_financials(order_id,subtotal,delivery_fee,platform_commission,tip,discount,total_charged,payment_method,payment_status,restaurant_due,courier_due)
 SELECT id,COALESCE(subtotal,total-COALESCE(delivery_fee,0)),COALESCE(delivery_fee,0),0,0,0,total,payment_method,payment_status,COALESCE(subtotal,total-COALESCE(delivery_fee,0)),COALESCE(delivery_fee,0) FROM orders;`);
+db.exec(`UPDATE order_financials SET reversal_amount=total_charged,reversed_at=COALESCE(reversed_at,CURRENT_TIMESTAMP),reversal_reason=COALESCE(reversal_reason,'Migración de pedido cancelado'),restaurant_due=0,courier_due=0,platform_commission=0,payment_status='cancelled',settlement_status='reversed',updated_at=CURRENT_TIMESTAMP WHERE order_id IN (SELECT id FROM orders WHERE status='cancelled') AND settlement_status!='reversed';`);
 
 module.exports = db;
 
