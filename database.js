@@ -173,6 +173,30 @@ CREATE TABLE IF NOT EXISTS restaurant_members(
     FOREIGN KEY(restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_restaurant_members_restaurant ON restaurant_members(restaurant_id,active);
+CREATE TABLE IF NOT EXISTS notifications(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    order_id INTEGER,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    target_url TEXT,
+    read_at TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id,read_at,id DESC);
+CREATE TABLE IF NOT EXISTS push_subscriptions(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    endpoint TEXT NOT NULL UNIQUE,
+    subscription_json TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
 CREATE INDEX IF NOT EXISTS idx_financials_settlement ON order_financials(settlement_status,created_at);
 `);
 

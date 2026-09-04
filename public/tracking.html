@@ -52,7 +52,8 @@ async function cargarPedidos(){
                 <div>${escapar(p.restaurant_name)}</div>
                 <span class="estado">${nombresEstado[p.status]||p.status}</span>
             </article>`).join('');
-        const primero=pedidos.find(p=>p.status==='delivering')||pedidos[0];
+        const solicitado=Number(new URLSearchParams(location.search).get('order'));
+        const primero=pedidos.find(p=>p.id===solicitado)||pedidos.find(p=>p.status==='delivering')||pedidos[0];
         seguir(primero.id);
     }catch(error){document.getElementById('pedidos').textContent='❌ '+error.message;}
 }
@@ -139,6 +140,6 @@ async function pintarMapa(lat,lng,nombre,destinoLat,destinoLng){
 function escapar(valor){return String(valor??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
 cargarPedidos();
 </script>
-<script src="/pwa-install.js" defer></script><script src="/ui-dialogs.js" defer></script><script src="/ai-assistant.js" defer></script></body>
+<script src="/pwa-install.js" defer></script><script src="/notifications.js" defer></script><script src="/ui-dialogs.js" defer></script><script src="/ai-assistant.js" defer></script></body>
 </html>
 

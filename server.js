@@ -4,6 +4,7 @@ const bcrypt=require("bcryptjs");
 const jwt=require("jsonwebtoken");
 const fs=require("fs");
 const crypto=require("crypto");
+const webpush=require('web-push');
 const db=require("./database");
 const {OAuth2Client}=require("google-auth-library");
 
@@ -31,6 +32,12 @@ const publicUser=user=>({id:user.id,name:user.name,email:user.email,phone:user.p
 
 const bootstrapAdminEmail=normalizeEmail(process.env.ADMIN_EMAIL);
 const bootstrapAdminPassword=String(process.env.ADMIN_PASSWORD||'');
+const vapidPath=path.join(dataDir,'.come_sayula_vapid.json');
+let vapidKeys;
+if(process.env.VAPID_PUBLIC_KEY&&process.env.VAPID_PRIVATE_KEY)vapidKeys={publicKey:process.env.VAPID_PUBLIC_KEY,privateKey:process.env.VAPID_PRIVATE_KEY};
+else if(fs.existsSync(vapidPath))vapidKeys=JSON.parse(fs.readFileSync(vapidPath,'utf8'));
+else{vapidKeys=webpush.generateVAPIDKeys();fs.writeFileSync(vapidPath,JSON.stringify(vapidKeys),{mode:0o600});}
+webpush.setVapidDetails('mailto:'+(process.env.SUPPORT_EMAIL||bootstrapAdminEmail||'soporte@come-sayula.app'),vapidKeys.publicKey,vapidKeys.privateKey);
 if(bootstrapAdminEmail&&bootstrapAdminPassword.length>=12&&!db.prepare("SELECT id FROM users WHERE role='admin'").get()){
     db.prepare("INSERT INTO users(name,email,phone,password_hash,role,account_status,email_verified) VALUES(?,?,?,?, 'admin','approved',1)")
         .run('Administrador',bootstrapAdminEmail,'',bcrypt.hashSync(bootstrapAdminPassword,12));
@@ -90,7 +97,20 @@ const restaurantAccess=permission=>(req,res,next)=>{
 };
 const restaurantOwner=(req,res,next)=>req.restaurant?.is_owner?next():res.status(403).json({error:'Esta acción está reservada al dueño del restaurante'});
 const audit=(req,action,type,id)=>{try{db.prepare('INSERT INTO audit_logs(user_id,action,entity_type,entity_id,ip_address) VALUES(?,?,?,?,?)').run(req.user?.id||null,action,type||null,id||null,String(req.ip||'').slice(0,64));}catch(e){console.error('AUDIT ERROR',e.message);}};
-const recordOrderStatus=(orderId,fromStatus,toStatus,user,note='')=>db.prepare('INSERT INTO order_status_history(order_id,from_status,to_status,actor_user_id,actor_role,note) VALUES(?,?,?,?,?,?)').run(orderId,fromStatus||null,toStatus,user?.id||null,user?.role||'system',String(note||'').slice(0,300));
+const sendPush=(userId,payload)=>{for(const row of db.prepare('SELECT id,subscription_json FROM push_subscriptions WHERE user_id=?').all(userId)){let subscription;try{subscription=JSON.parse(row.subscription_json);}catch(e){db.prepare('DELETE FROM push_subscriptions WHERE id=?').run(row.id);continue;}webpush.sendNotification(subscription,JSON.stringify(payload),{TTL:300,urgency:'high'}).catch(error=>{if([404,410].includes(error.statusCode))db.prepare('DELETE FROM push_subscriptions WHERE id=?').run(row.id);else console.error('PUSH ERROR',error.statusCode||'',error.message);});}};
+const addNotification=(userId,orderId,type,title,message,targetUrl)=>{if(userId){const result=db.prepare('INSERT INTO notifications(user_id,order_id,type,title,message,target_url) VALUES(?,?,?,?,?,?)').run(userId,orderId||null,type,String(title).slice(0,120),String(message).slice(0,300),targetUrl||null);sendPush(userId,{id:Number(result.lastInsertRowid),title,message,url:targetUrl||'/'});}};
+const notifyAdmins=(orderId,type,title,message,url='/admin.html')=>{for(const admin of db.prepare("SELECT id FROM users WHERE role='admin' AND account_status='approved'").all())addNotification(admin.id,orderId,type,title,message,url);};
+function notifyOrderStatus(orderId,status,actor){
+    const order=db.prepare('SELECT o.id,o.customer_id,o.restaurant_id,r.owner_id,r.name restaurant_name FROM orders o JOIN restaurants r ON r.id=o.restaurant_id WHERE o.id=?').get(orderId);if(!order)return;
+    const info={received:['Nuevo pedido','Recibiste un nuevo pedido.','/restaurant.html'],accepted:['Pedido aceptado',`${order.restaurant_name} aceptó tu pedido.`,'/tracking.html?order='+orderId],preparing:['Pedido en preparación','Tu pedido ya se está preparando.','/tracking.html?order='+orderId],ready:['Pedido listo','Tu pedido está listo y busca repartidor.','/tracking.html?order='+orderId],assigned:['Repartidor asignado','Ya hay un repartidor asignado a tu pedido.','/tracking.html?order='+orderId],delivering:['Pedido en camino','Tu pedido salió rumbo a tu domicilio.','/tracking.html?order='+orderId],delivered:['Pedido entregado','Tu pedido fue marcado como entregado.','/home3.html'],cancelled:['Pedido cancelado','El pedido fue cancelado.','/home3.html']}[status];if(!info)return;
+    const recipients=new Map();
+    if(status==='received'){recipients.set(order.owner_id,'/restaurant.html');for(const member of db.prepare('SELECT user_id FROM restaurant_members WHERE restaurant_id=? AND active=1 AND can_manage_orders=1').all(order.restaurant_id))recipients.set(member.user_id,'/restaurant.html');}
+    else recipients.set(order.customer_id,info[2]);
+    if(status==='ready')for(const courier of db.prepare("SELECT u.id FROM users u LEFT JOIN delivery_profiles dp ON dp.delivery_user_id=u.id WHERE u.role='delivery' AND u.account_status='approved' AND COALESCE(dp.status,'offline')='available'").all())recipients.set(courier.id,'/delivery.html');
+    if(['assigned','delivering','delivered'].includes(status)){recipients.set(order.owner_id,'/restaurant.html');const assignment=db.prepare("SELECT delivery_user_id FROM delivery_assignments WHERE order_id=? AND status IN ('accepted','delivered')").get(orderId);if(assignment)recipients.set(assignment.delivery_user_id,'/delivery.html');}
+    for(const [userId,url] of recipients)if(userId!==actor?.id)addNotification(userId,orderId,'order_'+status,info[0],info[1],url);
+}
+const recordOrderStatus=(orderId,fromStatus,toStatus,user,note='')=>{const result=db.prepare('INSERT INTO order_status_history(order_id,from_status,to_status,actor_user_id,actor_role,note) VALUES(?,?,?,?,?,?)').run(orderId,fromStatus||null,toStatus,user?.id||null,user?.role||'system',String(note||'').slice(0,300));notifyOrderStatus(orderId,toStatus,user);return result;};
 const deliveryPinFor=orderId=>{const hex=crypto.createHmac('sha256',SECRET).update('delivery:'+orderId).digest('hex');return String(parseInt(hex.slice(0,8),16)%10000).padStart(4,'0');};
 
 function aiContextFor(user){
@@ -186,6 +206,20 @@ app.post('/api/auth/reset-password',rateLimit('reset-password',8,30*60*1000),asy
     db.transaction(()=>{db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(bcrypt.hashSync(password,12),record.user_id);db.prepare('UPDATE password_reset_tokens SET used_at=CURRENT_TIMESTAMP WHERE id=?').run(record.id);})();
     audit(req,'password_reset_completed','user',record.user_id);res.json({ok:true});
 });
+app.get('/api/notifications',auth,(req,res)=>{const after=Math.max(0,Number(req.query.after)||0);const rows=db.prepare('SELECT id,order_id,type,title,message,target_url,read_at,created_at FROM notifications WHERE user_id=? AND id>? ORDER BY id DESC LIMIT 50').all(req.user.id,after);const unread=db.prepare('SELECT COUNT(*) total FROM notifications WHERE user_id=? AND read_at IS NULL').get(req.user.id).total;res.json({notifications:rows,unread});});
+app.patch('/api/notifications/read',auth,(req,res)=>{const id=req.body.id==null?null:Number(req.body.id);if(id!==null&&(!Number.isInteger(id)||id<=0))return res.status(400).json({error:'Notificación inválida'});if(id===null)db.prepare('UPDATE notifications SET read_at=CURRENT_TIMESTAMP WHERE user_id=? AND read_at IS NULL').run(req.user.id);else db.prepare('UPDATE notifications SET read_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?').run(id,req.user.id);res.json({ok:true});});
+app.get('/api/push/public-key',auth,(req,res)=>res.json({publicKey:vapidKeys.publicKey}));
+app.post('/api/push/subscribe',auth,rateLimit('push-subscribe',20,60*60*1000),(req,res)=>{const subscription=req.body.subscription,endpoint=String(subscription?.endpoint||'');if(!endpoint.startsWith('https://')||!subscription?.keys?.p256dh||!subscription?.keys?.auth)return res.status(400).json({error:'Suscripción inválida'});db.prepare(`INSERT INTO push_subscriptions(user_id,endpoint,subscription_json,updated_at) VALUES(?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id,subscription_json=excluded.subscription_json,updated_at=CURRENT_TIMESTAMP`).run(req.user.id,endpoint,JSON.stringify(subscription));res.status(201).json({ok:true});});
+app.delete('/api/push/subscribe',auth,(req,res)=>{const endpoint=String(req.body.endpoint||'');db.prepare('DELETE FROM push_subscriptions WHERE user_id=? AND endpoint=?').run(req.user.id,endpoint);res.json({ok:true});});
+app.get('/api/admin/pilot-readiness',auth,role(['admin']),(req,res)=>{const checks=[
+    {key:'restaurant',label:'Restaurante aprobado con ubicación y producto',ready:Boolean(db.prepare("SELECT r.id FROM restaurants r JOIN users u ON u.id=r.owner_id JOIN products p ON p.restaurant_id=r.id AND p.available=1 WHERE u.account_status='approved' AND r.active=1 AND r.latitude IS NOT NULL AND r.longitude IS NOT NULL LIMIT 1").get())},
+    {key:'courier',label:'Repartidor aprobado',ready:Boolean(db.prepare("SELECT id FROM users WHERE role='delivery' AND account_status='approved' LIMIT 1").get())},
+    {key:'zones',label:'Zona de entrega activa',ready:Boolean(db.prepare('SELECT id FROM delivery_zones WHERE available=1 LIMIT 1').get())},
+    {key:'notifications',label:'Notificaciones móviles configuradas',ready:Boolean(vapidKeys.publicKey)},
+    {key:'backups',label:'Respaldos automáticos habilitados',ready:process.env.DISABLE_AUTOMATIC_BACKUP!=='1'},
+    {key:'support',label:'Correo formal de soporte configurado',ready:Boolean(process.env.SUPPORT_EMAIL)},
+    {key:'payment',label:'Proveedor de cobro en línea configurado',ready:Boolean(process.env.PAYMENT_PROVIDER_ENABLED==='1')}
+];res.json({readyForControlledPilot:checks.filter(c=>['restaurant','courier','zones','notifications','backups'].includes(c.key)).every(c=>c.ready),readyForPublicPayments:checks.every(c=>c.ready),checks});});
 
 app.get('/api/admin/users',auth,role(['admin']),(req,res)=>{
     res.json(db.prepare("SELECT id,name,email,phone,role,account_status,email_verified,phone_verified,created_at FROM users WHERE role IN ('restaurant','delivery') ORDER BY id DESC").all());
@@ -282,6 +316,7 @@ app.post('/api/feedback',auth,role(['customer','restaurant','restaurant_employee
     const result=db.prepare(`INSERT INTO feedback_reports(tracking_code,user_id,user_role,category,rating,answers_json,comment,screenshot_url,order_id,anonymous,contact_allowed,contact_name,contact_email,contact_phone,group_key)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(trackingCode,anonymous?null:req.user.id,feedbackRole,category,rating,JSON.stringify(answers),comment,screenshotUrl||null,orderId,anonymous,contactAllowed,contact.name||null,contact.email||null,contact.phone||null,groupKey);
     audit(req,'feedback_created','feedback',Number(result.lastInsertRowid));
+    notifyAdmins(orderId,'feedback_received','Nueva opinión','Se recibió una nueva opinión de usuario.','/admin.html');
     res.status(201).json({id:Number(result.lastInsertRowid),trackingCode,status:'received'});
 });
 
@@ -316,6 +351,7 @@ app.post('/api/order-issues',auth,role(['customer','restaurant','restaurant_empl
     if(!Number.isInteger(orderId)||orderId<=0||!issueTypes.includes(issueType))return res.status(400).json({error:'Selecciona un pedido y un tipo de problema'});
     if(!canUseOrder(req.user,orderId))return res.status(403).json({error:'No puedes reportar problemas de ese pedido'});
     const result=db.prepare('INSERT INTO order_issues(order_id,reporter_user_id,reporter_role,issue_type,description) VALUES(?,?,?,?,?)').run(orderId,req.user.id,req.user.role,issueType,description);
+    notifyAdmins(orderId,'order_issue','Problema reportado','Se reportó un problema en el pedido #'+orderId+'.','/admin.html');
     audit(req,'order_issue_created','order_issue',Number(result.lastInsertRowid));res.status(201).json({id:Number(result.lastInsertRowid),status:'open'});
 });
 app.get('/api/order-issues/my',auth,role(['customer','restaurant','restaurant_employee','delivery']),(req,res)=>res.json(db.prepare('SELECT id,order_id,issue_type,description,status,created_at,updated_at FROM order_issues WHERE reporter_user_id=? ORDER BY id DESC').all(req.user.id)));
@@ -1050,6 +1086,9 @@ async function automaticBackup(){
     catch(error){console.error('BACKUP ERROR:',error.message);}
 }
 if(process.env.DISABLE_AUTOMATIC_BACKUP!=='1'){setTimeout(automaticBackup,5000);setInterval(automaticBackup,24*60*60*1000);}
+
+function notifyUnansweredOrders(){try{const orders=db.prepare(`SELECT o.id,o.customer_id,r.owner_id,r.id restaurant_id,r.name FROM orders o JOIN restaurants r ON r.id=o.restaurant_id WHERE o.status='received' AND o.is_demo=0 AND datetime(o.created_at,'+' || ? || ' minutes')<=CURRENT_TIMESTAMP AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.order_id=o.id AND n.type='order_unanswered')`).all(ORDER_RESPONSE_MINUTES);for(const order of orders){addNotification(order.customer_id,order.id,'order_unanswered','El restaurante aún no responde','Ya puedes cancelar este pedido sin penalización.','/tracking.html?order='+order.id);addNotification(order.owner_id,order.id,'order_unanswered','Pedido esperando respuesta','El pedido #'+order.id+' necesita atención inmediata.','/restaurant.html');for(const member of db.prepare('SELECT user_id FROM restaurant_members WHERE restaurant_id=? AND active=1 AND can_manage_orders=1').all(order.restaurant_id))addNotification(member.user_id,order.id,'order_unanswered','Pedido esperando respuesta','El pedido #'+order.id+' necesita atención inmediata.','/restaurant.html');notifyAdmins(order.id,'order_unanswered','Pedido sin respuesta',order.name+' no respondió el pedido #'+order.id+'.');}}catch(e){console.error('UNANSWERED NOTIFICATION ERROR',e.message);}}
+setTimeout(notifyUnansweredOrders,8000);setInterval(notifyUnansweredOrders,60*1000);
 
 app.use((error,req,res,next)=>{console.error('REQUEST ERROR',req.requestId,error);if(res.headersSent)return next(error);res.status(500).json({error:'Ocurrió un error interno',requestId:req.requestId});});
 
