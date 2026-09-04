@@ -12,6 +12,7 @@ const googleClient=new OAuth2Client(GOOGLE_CLIENT_ID);
 const OPENAI_API_KEY=String(process.env.OPENAI_API_KEY||'').trim();
 const OPENAI_MODEL=String(process.env.OPENAI_MODEL||'gpt-5-mini').trim();
 const ORDER_RESPONSE_MINUTES=Math.min(60,Math.max(3,Number(process.env.ORDER_RESPONSE_MINUTES)||10));
+const PLATFORM_COMMISSION_PERCENT=Math.min(100,Math.max(0,Number(process.env.PLATFORM_COMMISSION_PERCENT)||0));
 const app=express();
 app.set('trust proxy',process.env.TRUST_PROXY==='1'?1:false);
 const dataDir=process.env.DATA_DIR||__dirname;
@@ -177,7 +178,7 @@ app.post('/api/admin/users',auth,role(['admin']),rateLimit('admin-create-user',3
     try{
         const name=String(req.body.name||'').trim().slice(0,100),email=normalizeEmail(req.body.email),phone=String(req.body.phone||'').trim().slice(0,30),password=String(req.body.password||''),newRole=String(req.body.role||'');
         if(!name||!email||password.length<10||!['restaurant','delivery'].includes(newRole))return res.status(400).json({error:'Completa los datos; la contraseña temporal debe tener al menos 10 caracteres'});
-        const result=db.transaction(()=>{const created=db.prepare("INSERT INTO users(name,email,phone,password_hash,role,account_status) VALUES(?,?,?,?,?,'pending')").run(name,email,phone,bcrypt.hashSync(password,12),newRole);if(newRole==='restaurant')db.prepare("INSERT INTO restaurants(owner_id,name,description,address,phone,active) VALUES(?,?,'Nuevo restaurante en COME SAYULA','Sayula, Jalisco',?,0)").run(created.lastInsertRowid,name,phone);return created;})();
+        const result=db.transaction(()=>{const created=db.prepare("INSERT INTO users(name,email,phone,password_hash,role,account_status) VALUES(?,?,?,?,?,'pending')").run(name,email,phone,bcrypt.hashSync(password,12),newRole);if(newRole==='restaurant'){const restaurant=db.prepare("INSERT INTO restaurants(owner_id,name,description,address,phone,active) VALUES(?,?,'Nuevo restaurante en COME SAYULA','Sayula, Jalisco',?,0)").run(created.lastInsertRowid,name,phone);const eligible=db.prepare('SELECT COUNT(*) total FROM restaurant_subscriptions WHERE promotion_eligible=1').get().total<100?1:0;db.prepare('INSERT INTO restaurant_subscriptions(restaurant_id,promotion_eligible) VALUES(?,?)').run(restaurant.lastInsertRowid,eligible);}return created;})();
         audit(req,'staff_account_created','user',Number(result.lastInsertRowid));res.status(201).json({id:Number(result.lastInsertRowid),status:'pending'});
     }catch(error){if(String(error.code||'').includes('CONSTRAINT'))return res.status(409).json({error:'El correo ya está registrado'});throw error;}
 });
@@ -205,6 +206,8 @@ app.patch('/api/admin/restaurants/:id/visibility',auth,role(['admin']),(req,res)
     if(result.changes!==1)return res.status(404).json({error:'Restaurante no encontrado'});
     audit(req,'restaurant_visibility_updated','restaurant',id);res.json({ok:true,category,priority,featured:Boolean(featured)});
 });
+app.get('/api/admin/subscriptions',auth,role(['admin']),(req,res)=>res.json(db.prepare(`SELECT s.*,r.name FROM restaurant_subscriptions s JOIN restaurants r ON r.id=s.restaurant_id ORDER BY r.id`).all()));
+app.patch('/api/admin/subscriptions/:id/payment',auth,role(['admin']),(req,res)=>{const id=Number(req.params.id);if(req.body.acceptedTerms!==true)return res.status(400).json({error:'Confirma que el restaurante aceptó las condiciones'});const result=db.prepare("UPDATE restaurant_subscriptions SET registration_paid=1,registration_paid_at=CURRENT_TIMESTAMP,promotion_started_at=COALESCE(promotion_started_at,CURRENT_TIMESTAMP),terms_accepted_at=COALESCE(terms_accepted_at,CURRENT_TIMESTAMP) WHERE restaurant_id=?").run(id);if(result.changes!==1)return res.status(404).json({error:'Suscripción no encontrada'});audit(req,'restaurant_registration_confirmed','restaurant',id);res.json({ok:true,registrationFee:150,firstMonthIncluded:true});});
 app.get('/api/admin/delivery-zones',auth,role(['admin']),(req,res)=>res.json(db.prepare('SELECT * FROM delivery_zones ORDER BY priority DESC,max_distance_km').all()));
 app.post('/api/admin/delivery-zones',auth,role(['admin']),(req,res)=>{const name=String(req.body.name||'').trim().slice(0,80),city=String(req.body.city||'Sayula').trim().slice(0,80),min=Number(req.body.minDistanceKm),max=Number(req.body.maxDistanceKm),base=Number(req.body.baseFee),surcharge=Number(req.body.surchargePerKm||0),minimum=Number(req.body.minimumOrder||0);if(!name||![min,max,base,surcharge,minimum].every(Number.isFinite)||min<0||max<=min||base<0||surcharge<0||minimum<0)return res.status(400).json({error:'Datos de zona inválidos'});const result=db.prepare('INSERT INTO delivery_zones(name,city,min_distance_km,max_distance_km,base_fee,surcharge_per_km,minimum_order,available,priority) VALUES(?,?,?,?,?,?,?,?,?)').run(name,city,min,max,base,surcharge,minimum,req.body.available===false?0:1,Number(req.body.priority)||0);audit(req,'delivery_zone_created','delivery_zone',Number(result.lastInsertRowid));res.status(201).json({id:Number(result.lastInsertRowid)});});
 app.patch('/api/admin/delivery-zones/:id',auth,role(['admin']),(req,res)=>{const id=Number(req.params.id),name=String(req.body.name||'').trim().slice(0,80),city=String(req.body.city||'Sayula').trim().slice(0,80),min=Number(req.body.minDistanceKm),max=Number(req.body.maxDistanceKm),base=Number(req.body.baseFee),surcharge=Number(req.body.surchargePerKm||0),minimum=Number(req.body.minimumOrder||0);if(!Number.isInteger(id)||!name||![min,max,base,surcharge,minimum].every(Number.isFinite)||min<0||max<=min||base<0||surcharge<0||minimum<0)return res.status(400).json({error:'Datos de zona inválidos'});const result=db.prepare('UPDATE delivery_zones SET name=?,city=?,min_distance_km=?,max_distance_km=?,base_fee=?,surcharge_per_km=?,minimum_order=?,available=?,priority=? WHERE id=?').run(name,city,min,max,base,surcharge,minimum,req.body.available?1:0,Number(req.body.priority)||0,id);if(result.changes!==1)return res.status(404).json({error:'Zona no encontrada'});audit(req,'delivery_zone_updated','delivery_zone',id);res.json({ok:true});});
@@ -357,7 +360,7 @@ app.post('/api/orders',auth,role(['customer']),rateLimit('orders',12,10*60*1000)
     const total=Math.round((subtotal+quote.deliveryFee)*100)/100;
     const paymentStatus=paymentMethod==='Transferencia'?'awaiting_confirmation':'pay_on_delivery';
     const estimatedPrepMinutes=Math.min(180,Math.max(5,Number(restaurant.prep_minutes)||30)+(restaurant.operational_status==='saturated'?20:0));
-    const orderId=db.transaction(()=>{const order=db.prepare('INSERT INTO orders(customer_id,restaurant_id,address,payment_method,total,delivery_latitude,delivery_longitude,subtotal,delivery_fee,distance_km,payment_status,client_request_id,estimated_prep_minutes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run(req.user.id,restaurantId,String(address).trim().slice(0,500),paymentMethod,total,lat,lng,subtotal,quote.deliveryFee,quote.distanceKm,paymentStatus,clientRequestId,estimatedPrepMinutes);const id=Number(order.lastInsertRowid);const insert=db.prepare('INSERT INTO order_items(order_id,product_id,product_name,unit_price,quantity) VALUES(?,?,?,?,?)');normalized.forEach(item=>insert.run(id,item.id,item.name,item.price,item.quantity));recordOrderStatus(id,null,'received',req.user,'Pedido creado por el cliente');return id;})();
+    const orderId=db.transaction(()=>{const order=db.prepare('INSERT INTO orders(customer_id,restaurant_id,address,payment_method,total,delivery_latitude,delivery_longitude,subtotal,delivery_fee,distance_km,payment_status,client_request_id,estimated_prep_minutes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run(req.user.id,restaurantId,String(address).trim().slice(0,500),paymentMethod,total,lat,lng,subtotal,quote.deliveryFee,quote.distanceKm,paymentStatus,clientRequestId,estimatedPrepMinutes);const id=Number(order.lastInsertRowid),commission=Math.round(subtotal*PLATFORM_COMMISSION_PERCENT)/100;const insert=db.prepare('INSERT INTO order_items(order_id,product_id,product_name,unit_price,quantity) VALUES(?,?,?,?,?)');normalized.forEach(item=>insert.run(id,item.id,item.name,item.price,item.quantity));db.prepare('INSERT INTO order_financials(order_id,subtotal,delivery_fee,platform_commission,tip,discount,total_charged,payment_method,payment_status,restaurant_due,courier_due) VALUES(?,?,?,?,0,0,?,?,?,?,?)').run(id,subtotal,quote.deliveryFee,commission,total,paymentMethod,paymentStatus,subtotal-commission,quote.deliveryFee);recordOrderStatus(id,null,'received',req.user,'Pedido creado por el cliente');return id;})();
     audit(req,'order_created','order',orderId);
     res.status(201).json({orderId,total,subtotal,deliveryFee:quote.deliveryFee,distanceKm:quote.distanceKm,zoneName:quote.zoneName,paymentStatus,estimatedPrepMinutes});
 });
@@ -472,6 +475,7 @@ app.post('/api/auth/google',rateLimit('google-login',10,15*60*1000),async(req,re
     }
 });
 app.get('/api/restaurant/me',auth,role(['restaurant']),(req,res)=>{let r=db.prepare('SELECT * FROM restaurants WHERE owner_id=?').get(req.user.id);let products=db.prepare('SELECT * FROM products WHERE restaurant_id=?').all(r.id);let orders=db.prepare("SELECT o.*,u.name customer_name,u.phone customer_phone,EXISTS(SELECT 1 FROM delivery_assignments da WHERE da.order_id=o.id AND da.status='accepted') AS delivery_assigned FROM orders o JOIN users u ON u.id=o.customer_id WHERE o.restaurant_id=? ORDER BY o.id DESC").all(r.id);let it=db.prepare('SELECT * FROM order_items WHERE order_id=?');res.json({...r,products,orders:orders.map(o=>({...o,items:it.all(o.id)}))})});
+app.get('/api/restaurant/settlement',auth,role(['restaurant']),(req,res)=>{const restaurant=db.prepare('SELECT id FROM restaurants WHERE owner_id=?').get(req.user.id);const rows=db.prepare(`SELECT date(o.created_at) day,COUNT(*) orders_count,ROUND(SUM(f.subtotal),2) sales,ROUND(SUM(f.platform_commission),2) commission,ROUND(SUM(CASE WHEN f.payment_method='Efectivo' THEN f.total_charged ELSE 0 END),2) cash_orders,ROUND(SUM(CASE WHEN f.payment_method!='Efectivo' THEN f.total_charged ELSE 0 END),2) digital_orders,ROUND(SUM(f.restaurant_due),2) restaurant_due,ROUND(SUM(CASE WHEN o.status='cancelled' THEN 1 ELSE 0 END),0) cancellations FROM orders o JOIN order_financials f ON f.order_id=o.id WHERE o.restaurant_id=? AND o.is_demo=0 GROUP BY date(o.created_at) ORDER BY day DESC LIMIT 60`).all(restaurant.id);res.json({commissionPercent:PLATFORM_COMMISSION_PERCENT,days:rows});});
 
 app.post('/api/restaurant/uploads',auth,role(['restaurant']),(req,res)=>{
     const match=String(req.body.dataUrl||'').match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
@@ -581,7 +585,7 @@ app.patch('/api/restaurant/orders/:id/payment',auth,role(['restaurant']),(req,re
     if(['cancelled','delivered'].includes(order.status))return res.status(409).json({error:'El pedido ya está cerrado'});
     const result=db.prepare("UPDATE orders SET payment_status='confirmed' WHERE id=? AND payment_status='awaiting_confirmation'").run(order.id);
     if(result.changes!==1)return res.status(409).json({error:'El pago ya cambió; actualiza el panel'});
-    audit(req,'transfer_confirmed','order',order.id);res.json({ok:true,paymentStatus:'confirmed'});
+    db.prepare("UPDATE order_financials SET payment_status='confirmed',updated_at=CURRENT_TIMESTAMP WHERE order_id=?").run(order.id);audit(req,'transfer_confirmed','order',order.id);res.json({ok:true,paymentStatus:'confirmed'});
 });
 app.put('/api/delivery/location',auth,role(['delivery']),rateLimit('delivery-location',120,60*1000),(req,res)=>{
     const latitude=Number(req.body.latitude),longitude=Number(req.body.longitude),accuracy=Number(req.body.accuracy||0);
@@ -904,7 +908,7 @@ app.patch('/api/delivery/orders/:id',auth,role(['delivery']),(req,res)=>{
             return true;
         })();
 
-        audit(req,'order_delivered','order',orderId);
+        db.prepare("UPDATE order_financials SET payment_status=CASE WHEN payment_status='pay_on_delivery' THEN 'paid' ELSE payment_status END,updated_at=CURRENT_TIMESTAMP WHERE order_id=?").run(orderId);audit(req,'order_delivered','order',orderId);
         return res.json({
             ok:resultado,
             message:'Pedido entregado correctamente'
@@ -986,7 +990,7 @@ app.post('/api/orders/:id/review',auth,role(['customer']),rateLimit('order-revie
     if(tipAmount>0&&!order.delivery_user_id)return res.status(400).json({error:'El pedido no tiene repartidor para recibir propina'});
     try{
         db.prepare(`INSERT INTO order_reviews(order_id,customer_id,restaurant_id,delivery_user_id,restaurant_rating,delivery_rating,comment,tip_amount,tip_method) VALUES(?,?,?,?,?,?,?,?, 'cash')`).run(order.id,req.user.id,order.restaurant_id,order.delivery_user_id,restaurantRating,deliveryRating,comment,tipAmount);
-        audit(req,'order_review_created','order',order.id);res.status(201).json({ok:true,tipAmount,tipMethod:'cash'});
+        db.prepare('UPDATE order_financials SET tip=?,courier_due=delivery_fee+?,updated_at=CURRENT_TIMESTAMP WHERE order_id=?').run(tipAmount,tipAmount,order.id);audit(req,'order_review_created','order',order.id);res.status(201).json({ok:true,tipAmount,tipMethod:'cash'});
     }catch(error){if(String(error.code||'').includes('CONSTRAINT'))return res.status(409).json({error:'Este pedido ya fue calificado'});throw error;}
 });
 
