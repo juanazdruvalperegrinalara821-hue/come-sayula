@@ -199,36 +199,6 @@ main{
     font-size:13px;
 }
 
-.promotion{
-    background:#222;
-    color:white;
-    border-radius:22px;
-    padding:28px;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:20px;
-}
-
-.promotion h2{
-    color:#ffb703;
-    margin-bottom:8px;
-}
-
-.promotion p{
-    color:#ddd;
-    line-height:1.5;
-}
-
-.promo-code{
-    background:#ffb703;
-    color:#222;
-    padding:14px 20px;
-    border-radius:12px;
-    font-weight:bold;
-    white-space:nowrap;
-}
-
 .restaurants{
     display:grid;
     grid-template-columns:repeat(3,1fr);
@@ -274,6 +244,7 @@ main{
     color:#f48c06;
     font-weight:bold;
 }
+.restaurant-tags{display:flex;flex-wrap:wrap;gap:7px;margin:-3px 0 11px}.restaurant-tag{font-size:12px;border-radius:999px;padding:5px 9px;background:#fff2e7;color:#a54104;font-weight:bold}.restaurant-tag.featured{background:#e85d04;color:#fff}
 
 .restaurant-button{
     width:100%;
@@ -396,11 +367,6 @@ main{
         grid-template-columns:1fr;
     }
 
-    .promotion{
-        flex-direction:column;
-        align-items:flex-start;
-    }
-
     .bottom-nav{
         justify-content:space-around;
         gap:0;
@@ -413,7 +379,7 @@ main{
 <link rel="stylesheet" href="/ai-assistant.css">
 </head>
 
-<body>
+<body><link rel="stylesheet" href="/ui-dialogs.css">
 
 <header>
 
@@ -529,31 +495,11 @@ oninput="buscar(this.value)"
 
 </section>
 
-<section class="section">
-
-<div class="promotion">
-
-<div>
-<h2>🔥 Promoción de bienvenida</h2>
-
-<p>
-Obtén descuento en tu primer pedido.
-</p>
-</div>
-
-<div class="promo-code">
-SAYULA20
-</div>
-
-</div>
-
-</section>
-
 <section class="section" id="restaurantes">
 
 <div class="section-title">
 
-<h2>Restaurantes destacados</h2>
+<h2>Restaurantes en Sayula</h2>
 
 <button onclick="mostrarTodos()">
 Ver todos
@@ -661,7 +607,7 @@ async function cargarRestaurantes(){
             tarjeta.dataset.id = restaurante.id;
 
             tarjeta.dataset.name = (
-                `${restaurante.name || ''} ${restaurante.description || ''}`
+                `${restaurante.name || ''} ${restaurante.description || ''} ${restaurante.category || ''}`
             ).toLowerCase();
 
             tarjeta.innerHTML = `
@@ -672,6 +618,8 @@ async function cargarRestaurantes(){
                 </div>
 
                 <div class="restaurant-info">
+
+                    <div class="restaurant-tags"><span class="restaurant-tag">${escapar(restaurante.category||'Otros')}</span>${restaurante.featured?'<span class="restaurant-tag featured">★ Recomendado</span>':''}</div>
 
                     <h3>
                         ${escapar(restaurante.name)}
@@ -687,7 +635,9 @@ async function cargarRestaurantes(){
                     <div class="rating">
                         ${restaurante.listingType === 'directory'
                             ? 'ℹ️ Información por confirmar'
-                            : '⭐ Nuevo'}
+                            : restaurante.rating
+                                ? `⭐ ${Number(restaurante.rating).toFixed(1)} · ${Number(restaurante.ratingCount)} calificaciones`
+                                : '⭐ Nuevo'}
                     </div>
 
                     <button
@@ -1833,9 +1783,9 @@ async function confirmarPedido(evento){
         document.getElementById('ventanaCheckout').innerHTML=`<div style="width:min(480px,100%);background:white;border-radius:22px;padding:35px;text-align:center"><div style="font-size:65px">✅</div><h2>Pedido #${datos.orderId} confirmado</h2>${avisoPago}<p style="color:#666;margin:12px 0 22px">Productos: $${Number(datos.subtotal).toFixed(2)}<br>Envío: $${Number(datos.deliveryFee).toFixed(2)}<br><strong>Total: $${Number(datos.total).toFixed(2)}</strong></p><button onclick="location.href='/tracking.html'" style="width:100%;border:0;background:#e85d04;color:white;padding:14px;border-radius:12px;font-weight:bold;cursor:pointer">Ver seguimiento</button><button onclick="location.reload()" style="width:100%;border:0;background:#eee;padding:13px;border-radius:12px;font-weight:bold;margin-top:9px;cursor:pointer">Volver al inicio</button></div>`;
     }catch(error){document.getElementById('errorPedido').textContent='❌ '+error.message;boton.disabled=false;boton.textContent='Intentar nuevamente';}
 }
-function cerrarSesion(){
+async function cerrarSesion(){
 
-    const confirmar = confirm(
+    const confirmar = await csConfirm(
         '¿Seguro que quieres cerrar sesión?'
     );
 
@@ -2033,7 +1983,7 @@ window.addEventListener('DOMContentLoaded', function(){
 
 </script>
 
-<script src="/pwa-install.js" defer></script><script src="/ai-assistant.js" defer></script></body>
+<script src="/pwa-install.js" defer></script><script src="/ui-dialogs.js" defer></script><script src="/ai-assistant.js" defer></script></body>
 </html>
 
 

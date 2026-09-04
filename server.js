@@ -188,8 +188,26 @@ app.patch('/api/admin/users/:id/status',auth,role(['admin']),(req,res)=>{
 app.patch('/api/admin/users/:id/verification',auth,role(['admin']),(req,res)=>{
     const id=Number(req.params.id);db.prepare('UPDATE users SET email_verified=?,phone_verified=? WHERE id=?').run(req.body.emailVerified?1:0,req.body.phoneVerified?1:0,id);audit(req,'contact_verification_updated','user',id);res.json({ok:true});
 });
-app.get('/api/restaurants',(req,res)=>{const registrados=db.prepare("SELECT id,name,description,address,phone,image,'registered' AS listingType,'Verificado' AS verificationStatus,NULL AS sourceUrl FROM restaurants WHERE active=1").all();const directorio=db.prepare("SELECT 'directory-' || id AS id,name,description,address,phone,NULL AS image,'directory' AS listingType,verification_status AS verificationStatus,source_url AS sourceUrl FROM directory_entries WHERE active=1").all();res.json([...registrados,...directorio].sort((a,b)=>a.name.localeCompare(b.name,'es')))});
-app.get('/api/restaurants/:id/menu',(req,res)=>{const id=String(req.params.id);if(id.startsWith('directory-')){const directoryId=Number(id.replace('directory-',''));const r=db.prepare('SELECT id,name,description,address,phone,hours,source_url,verification_status FROM directory_entries WHERE id=? AND active=1').get(directoryId);if(!r)return res.status(404).json({error:'No encontrado'});return res.json({restaurant:{...r,id,listingType:'directory',sourceUrl:r.source_url,verificationStatus:r.verification_status},products:[]})}let r=db.prepare('SELECT id,name,description,address,phone,image FROM restaurants WHERE id=? AND active=1').get(req.params.id);if(!r)return res.status(404).json({error:'No encontrado'});res.json({restaurant:{...r,listingType:'registered',verificationStatus:'Verificado'},products:db.prepare('SELECT * FROM products WHERE restaurant_id=? AND available=1').all(r.id)})});
+app.get('/api/admin/restaurants',auth,role(['admin']),(req,res)=>{
+    res.json(db.prepare(`SELECT r.id,r.name,r.category,r.priority,r.featured,r.active,u.account_status,
+        ROUND(AVG(rv.restaurant_rating),1) rating,COUNT(rv.id) rating_count
+        FROM restaurants r JOIN users u ON u.id=r.owner_id
+        LEFT JOIN order_reviews rv ON rv.restaurant_id=r.id
+        GROUP BY r.id ORDER BY r.featured DESC,r.priority DESC,r.name`).all());
+});
+app.patch('/api/admin/restaurants/:id/visibility',auth,role(['admin']),(req,res)=>{
+    const id=Number(req.params.id),priority=Number(req.body.priority),category=String(req.body.category||'Otros').trim().slice(0,40),featured=req.body.featured?1:0;
+    if(!Number.isInteger(id)||id<=0||!Number.isInteger(priority)||priority<0||priority>100||!category)return res.status(400).json({error:'Visibilidad inválida'});
+    const result=db.prepare('UPDATE restaurants SET category=?,priority=?,featured=? WHERE id=?').run(category,priority,featured,id);
+    if(result.changes!==1)return res.status(404).json({error:'Restaurante no encontrado'});
+    audit(req,'restaurant_visibility_updated','restaurant',id);res.json({ok:true,category,priority,featured:Boolean(featured)});
+});
+app.get('/api/restaurants',(req,res)=>{const registrados=db.prepare(`SELECT r.id,r.name,r.description,r.address,r.phone,r.image,r.category,r.priority,r.featured,
+    ROUND(AVG(rv.restaurant_rating),1) AS rating,COUNT(rv.id) AS ratingCount,
+    'registered' AS listingType,'Verificado' AS verificationStatus,NULL AS sourceUrl
+    FROM restaurants r LEFT JOIN order_reviews rv ON rv.restaurant_id=r.id WHERE r.active=1
+    GROUP BY r.id`).all();const directorio=db.prepare("SELECT 'directory-' || id AS id,name,description,address,phone,NULL AS image,category,priority,featured,NULL AS rating,0 AS ratingCount,'directory' AS listingType,verification_status AS verificationStatus,source_url AS sourceUrl FROM directory_entries WHERE active=1").all();res.json([...registrados,...directorio].sort((a,b)=>Number(b.featured)-Number(a.featured)||Number(b.priority)-Number(a.priority)||(Number(b.rating)||0)-(Number(a.rating)||0)||a.name.localeCompare(b.name,'es')))});
+app.get('/api/restaurants/:id/menu',(req,res)=>{const id=String(req.params.id);if(id.startsWith('directory-')){const directoryId=Number(id.replace('directory-',''));const r=db.prepare('SELECT id,name,category,description,address,phone,hours,source_url,verification_status FROM directory_entries WHERE id=? AND active=1').get(directoryId);if(!r)return res.status(404).json({error:'No encontrado'});return res.json({restaurant:{...r,id,listingType:'directory',sourceUrl:r.source_url,verificationStatus:r.verification_status},products:[]})}let r=db.prepare(`SELECT r.id,r.name,r.category,r.description,r.address,r.phone,r.image,ROUND(AVG(rv.restaurant_rating),1) rating,COUNT(rv.id) ratingCount FROM restaurants r LEFT JOIN order_reviews rv ON rv.restaurant_id=r.id WHERE r.id=? AND r.active=1 GROUP BY r.id`).get(req.params.id);if(!r)return res.status(404).json({error:'No encontrado'});res.json({restaurant:{...r,listingType:'registered',verificationStatus:'Verificado'},products:db.prepare('SELECT * FROM products WHERE restaurant_id=? AND available=1').all(r.id)})});
 const distanceKm=(lat1,lng1,lat2,lng2)=>{const rad=Math.PI/180;const a=Math.sin((lat2-lat1)*rad/2)**2+Math.cos(lat1*rad)*Math.cos(lat2*rad)*Math.sin((lng2-lng1)*rad/2)**2;return 6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));};
 const deliveryQuote=(restaurant,lat,lng)=>{
     if(restaurant.latitude===null||restaurant.latitude===undefined||restaurant.longitude===null||restaurant.longitude===undefined||!Number.isFinite(Number(restaurant.latitude))||!Number.isFinite(Number(restaurant.longitude))){return {distanceKm:null,deliveryFee:35};}
@@ -227,7 +245,7 @@ app.post('/api/orders',auth,role(['customer']),rateLimit('orders',12,10*60*1000)
     audit(req,'order_created','order',orderId);
     res.status(201).json({orderId,total,subtotal,deliveryFee:quote.deliveryFee,distanceKm:quote.distanceKm,paymentStatus});
 });
-app.get('/api/orders/my',auth,role(['customer']),(req,res)=>{let os=db.prepare('SELECT o.*,r.name restaurant_name FROM orders o JOIN restaurants r ON r.id=o.restaurant_id WHERE o.customer_id=? ORDER BY o.id DESC').all(req.user.id);let it=db.prepare('SELECT * FROM order_items WHERE order_id=?');res.json(os.map(o=>({...o,items:it.all(o.id)})))});
+app.get('/api/orders/my',auth,role(['customer']),(req,res)=>{let os=db.prepare(`SELECT o.*,r.name restaurant_name,rv.restaurant_rating,rv.delivery_rating,rv.comment review_comment,rv.tip_amount,rv.tip_method FROM orders o JOIN restaurants r ON r.id=o.restaurant_id LEFT JOIN order_reviews rv ON rv.order_id=o.id WHERE o.customer_id=? ORDER BY o.id DESC`).all(req.user.id);let it=db.prepare('SELECT * FROM order_items WHERE order_id=?');res.json(os.map(o=>({...o,items:it.all(o.id)})))});
 app.post('/api/auth/google',rateLimit('google-login',10,15*60*1000),async(req,res)=>{
     try{
         const {credential}=req.body;
@@ -607,7 +625,9 @@ app.get('/api/delivery/orders/my',auth,role(['delivery']),(req,res)=>{
             u.phone AS customer_phone,
             da.status AS delivery_status,
             da.accepted_at,
-            da.delivered_at
+            da.delivered_at,
+            COALESCE(rv.tip_amount,0) AS tip_amount,
+            rv.delivery_rating
         FROM delivery_assignments da
         JOIN orders o
             ON o.id = da.order_id
@@ -615,6 +635,8 @@ app.get('/api/delivery/orders/my',auth,role(['delivery']),(req,res)=>{
             ON r.id = o.restaurant_id
         JOIN users u
             ON u.id = o.customer_id
+        LEFT JOIN order_reviews rv
+            ON rv.order_id = o.id
         WHERE da.delivery_user_id = ?
         ORDER BY o.id DESC
     `).all(req.user.id);
@@ -789,11 +811,13 @@ app.get('/api/orders/:id/tracking',auth,role(['customer']),(req,res)=>{
                r.name AS restaurant_name,r.address AS restaurant_address,
                u.name AS delivery_name,u.phone AS delivery_phone,
                da.latitude,da.longitude,da.location_accuracy,
-               da.location_updated_at,da.accepted_at,da.delivered_at
+               da.location_updated_at,da.accepted_at,da.delivered_at,
+               rv.restaurant_rating,rv.delivery_rating,rv.comment AS review_comment,rv.tip_amount
         FROM orders o
         JOIN restaurants r ON r.id=o.restaurant_id
         LEFT JOIN delivery_assignments da ON da.order_id=o.id
         LEFT JOIN users u ON u.id=da.delivery_user_id
+        LEFT JOIN order_reviews rv ON rv.order_id=o.id
         WHERE o.id=? AND o.customer_id=?
     `).get(orderId,req.user.id);
 
@@ -801,7 +825,28 @@ app.get('/api/orders/:id/tracking',auth,role(['customer']),(req,res)=>{
         return res.status(404).json({error:'Pedido no encontrado'});
     }
 
+    if(['delivered','cancelled'].includes(tracking.status)){
+        tracking.latitude=null;
+        tracking.longitude=null;
+        tracking.location_accuracy=null;
+        tracking.location_updated_at=null;
+        tracking.delivery_phone=null;
+    }
     res.json(tracking);
+});
+
+app.post('/api/orders/:id/review',auth,role(['customer']),rateLimit('order-review',12,60*60*1000),(req,res)=>{
+    const orderId=Number(req.params.id),restaurantRating=Number(req.body.restaurantRating),deliveryRating=req.body.deliveryRating==null||req.body.deliveryRating===''?null:Number(req.body.deliveryRating),tipAmount=Math.round(Number(req.body.tipAmount||0)*100)/100,comment=String(req.body.comment||'').trim().slice(0,500);
+    if(!Number.isInteger(orderId)||orderId<=0||!Number.isInteger(restaurantRating)||restaurantRating<1||restaurantRating>5||deliveryRating!==null&&(!Number.isInteger(deliveryRating)||deliveryRating<1||deliveryRating>5)||!Number.isFinite(tipAmount)||tipAmount<0||tipAmount>1000)return res.status(400).json({error:'Calificación o propina inválida'});
+    const order=db.prepare(`SELECT o.id,o.restaurant_id,o.status,da.delivery_user_id FROM orders o LEFT JOIN delivery_assignments da ON da.order_id=o.id WHERE o.id=? AND o.customer_id=?`).get(orderId,req.user.id);
+    if(!order)return res.status(404).json({error:'Pedido no encontrado'});
+    if(order.status!=='delivered')return res.status(409).json({error:'Podrás calificar cuando el pedido haya sido entregado'});
+    if(deliveryRating!==null&&!order.delivery_user_id)return res.status(400).json({error:'El pedido no tiene repartidor para calificar'});
+    if(tipAmount>0&&!order.delivery_user_id)return res.status(400).json({error:'El pedido no tiene repartidor para recibir propina'});
+    try{
+        db.prepare(`INSERT INTO order_reviews(order_id,customer_id,restaurant_id,delivery_user_id,restaurant_rating,delivery_rating,comment,tip_amount,tip_method) VALUES(?,?,?,?,?,?,?,?, 'cash')`).run(order.id,req.user.id,order.restaurant_id,order.delivery_user_id,restaurantRating,deliveryRating,comment,tipAmount);
+        audit(req,'order_review_created','order',order.id);res.status(201).json({ok:true,tipAmount,tipMethod:'cash'});
+    }catch(error){if(String(error.code||'').includes('CONSTRAINT'))return res.status(409).json({error:'Este pedido ya fue calificado'});throw error;}
 });
 
 app.get('/api/ai/status',auth,(req,res)=>res.json({enabled:Boolean(OPENAI_API_KEY),model:OPENAI_API_KEY?OPENAI_MODEL:null}));

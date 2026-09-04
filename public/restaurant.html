@@ -225,7 +225,7 @@ header button{
 <link rel="stylesheet" href="/ai-assistant.css">
 </head>
 
-<body>
+<body><link rel="stylesheet" href="/ui-dialogs.css">
 
 <header>
 
@@ -717,7 +717,7 @@ function mostrarPedidos(pedidos){
 }
 
 async function confirmarTransferencia(id){
-    if(!confirm('Confirma únicamente después de comprobar el depósito en tu cuenta.'))return;
+    if(!await csConfirm('Confirma únicamente después de comprobar el depósito en tu cuenta.'))return;
     try{await solicitudProducto('/api/restaurant/orders/'+id+'/payment','PATCH',{});await cargarPanel();}
     catch(error){alert('❌ '+error.message);}
 }
@@ -833,6 +833,6 @@ if(comprobarAcceso()){
 
 </script>
 
-<script src="/pwa-install.js" defer></script><script src="/ai-assistant.js" defer></script></body>
+<script src="/pwa-install.js" defer></script><script src="/ui-dialogs.js" defer></script><script src="/ai-assistant.js" defer></script></body>
 </html>
 

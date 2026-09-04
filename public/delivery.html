@@ -177,7 +177,7 @@ select{
 <link rel="stylesheet" href="/ai-assistant.css">
 </head>
 
-<body>
+<body><link rel="stylesheet" href="/ui-dialogs.css">
 
 <header>
 
@@ -448,7 +448,7 @@ async function cargarDisponibles(){
 
 async function aceptarPedido(id){
 
-    if(!confirm(
+    if(!await csConfirm(
         '¿Quieres aceptar el pedido #' +
         id +
         '?'
@@ -605,6 +605,8 @@ async function cargarMisPedidos(){
                     p.total
                 ).toFixed(2)}
             </div>
+
+            ${Number(p.tip_amount)>0?`<div style="margin-top:9px;background:#fff4df;color:#8a4b00;border-radius:10px;padding:10px;text-align:center;font-weight:bold">💛 Propina para el repartidor: $${Number(p.tip_amount).toFixed(2)}<br><small>Entrega directa en efectivo</small></div>`:''}
 
             ${p.status === 'delivering' ? `
                 <div class="acciones-mapa">
@@ -890,6 +892,6 @@ if(comprobarAcceso()){
 
 </script>
 
-<script src="/pwa-install.js" defer></script><script src="/ai-assistant.js" defer></script></body>
+<script src="/pwa-install.js" defer></script><script src="/ui-dialogs.js" defer></script><script src="/ai-assistant.js" defer></script></body>
 </html>
 

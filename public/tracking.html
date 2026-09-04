@@ -14,11 +14,12 @@ header h1{margin:0;font-size:23px}header button{border:0;background:white;color:
 .pedido{border:1px solid #eadfd5;border-radius:14px;padding:14px;margin-top:12px;cursor:pointer;transition:.2s}.pedido:hover,.pedido.activo{border-color:#e85d04;background:#fff8f1;transform:translateY(-1px)}
 .fila{display:flex;justify-content:space-between;gap:12px}.estado{display:inline-block;margin-top:9px;border-radius:999px;padding:6px 10px;background:#fff0e5;color:#b94c04;font-size:13px;font-weight:bold}
 #mapa{height:430px;border-radius:16px;margin-top:16px;background:#edf1f2}.espera{height:100%;display:grid;place-items:center;text-align:center;color:#777;padding:30px}.datos{line-height:1.7;color:#555}.actualizacion{font-size:13px;color:#16803b;font-weight:bold;margin-top:10px}
+.entrega-lista{text-align:center;background:linear-gradient(145deg,#fff8f1,#fff);border:1px solid #f3d8c2;border-radius:18px;padding:24px;margin-top:18px}.entrega-lista .icono{font-size:58px}.resena{margin-top:18px;border-top:1px solid #eee;padding-top:18px}.resena-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.resena label{display:block;font-weight:bold;font-size:13px;margin-bottom:5px}.resena select,.resena input,.resena textarea{width:100%;padding:11px;border:1px solid #d9d1cb;border-radius:10px;font:inherit}.resena textarea{min-height:75px;resize:vertical}.propinas{display:flex;gap:7px;flex-wrap:wrap;margin:7px 0}.propinas button{border:1px solid #efc6a8;background:#fff7f0;color:#a44408;border-radius:999px;padding:8px 11px;cursor:pointer}.enviar-resena{width:100%;border:0;border-radius:11px;padding:13px;background:#e85d04;color:#fff;font-weight:bold;cursor:pointer;margin-top:11px}.agradecimiento{background:#eaf8ef;color:#176b37;border-radius:13px;padding:15px;margin-top:16px;text-align:center}
 @media(max-width:780px){.contenedor{grid-template-columns:1fr;padding:14px}.panel,.detalle{padding:16px}#mapa{height:360px}}
 </style>
-<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><meta name="theme-color" content="#e85d04"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="COME SAYULA">
+<link rel="stylesheet" href="/ai-assistant.css"><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><meta name="theme-color" content="#e85d04"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="COME SAYULA">
 </head>
-<body>
+<body><link rel="stylesheet" href="/ui-dialogs.css">
 <header><h1>📍 Seguimiento de pedidos</h1><button onclick="location.href='/home3.html'">← Inicio</button></header>
 <main class="contenedor">
     <section class="panel"><h2>Mis pedidos</h2><div id="pedidos">Cargando…</div></section>
@@ -69,7 +70,9 @@ async function actualizarSeguimiento(){
     if(!pedidoActivo)return;
     try{
         const p=await api('/api/orders/'+pedidoActivo+'/tracking');
+        cerrarMapaSeguimiento();
         const tieneUbicacion=p.latitude!==null&&p.latitude!==undefined&&p.longitude!==null&&p.longitude!==undefined&&Number.isFinite(Number(p.latitude))&&Number.isFinite(Number(p.longitude));
+        const finalizado=p.status==='delivered'||p.status==='cancelled';
         document.getElementById('detalle').innerHTML=`
             <h2>Pedido #${p.id} · ${nombresEstado[p.status]||p.status}</h2>
             <div class="datos">
@@ -79,13 +82,23 @@ async function actualizarSeguimiento(){
                 ${p.delivery_phone?'<br>📞 '+escapar(p.delivery_phone):''}
             </div>
             <div class="actualizacion">${mensajeUbicacion(p,tieneUbicacion)}</div>
-            <div id="resumenRuta" class="actualizacion"></div>
-            <div id="mapa"><div class="espera">${tieneUbicacion?'Cargando mapa…':'El mapa aparecerá cuando el repartidor comparta su ubicación.'}</div></div>`;
-        mapa=null;marcador=null;
-        if(tieneUbicacion) pintarMapa(Number(p.latitude),Number(p.longitude),p.delivery_name,p.delivery_latitude==null?null:Number(p.delivery_latitude),p.delivery_longitude==null?null:Number(p.delivery_longitude));
-        if(p.status==='delivered'||p.status==='cancelled'){clearInterval(temporizador);temporizador=null;}
+            ${finalizado?panelFinal(p):`<div id="resumenRuta" class="actualizacion"></div><div id="mapa"><div class="espera">${tieneUbicacion?'Cargando mapa…':'El mapa aparecerá cuando el repartidor comparta su ubicación.'}</div></div>`}`;
+        if(!finalizado&&tieneUbicacion) pintarMapa(Number(p.latitude),Number(p.longitude),p.delivery_name,p.delivery_latitude==null?null:Number(p.delivery_latitude),p.delivery_longitude==null?null:Number(p.delivery_longitude));
+        if(finalizado){clearInterval(temporizador);temporizador=null;}
     }catch(error){document.getElementById('detalle').innerHTML='<div class="espera">❌ '+escapar(error.message)+'</div>';}
 }
+
+function cerrarMapaSeguimiento(){if(mapa){try{mapa.remove()}catch(e){}}mapa=null;marcador=null;marcadorDestino=null;lineaRuta=null;}
+
+function panelFinal(p){
+    if(p.status==='cancelled')return '<div class="entrega-lista"><div class="icono">ℹ️</div><h3>Pedido cerrado</h3><p>La ubicación del repartidor ya no está disponible.</p></div>';
+    if(p.restaurant_rating)return `<div class="entrega-lista"><div class="icono">✅</div><h3>Entrega finalizada</h3><p>El mapa se cerró para proteger la ubicación del repartidor.</p></div><div class="agradecimiento">Gracias por calificar: restaurante ${p.restaurant_rating}/5${p.delivery_rating?' · repartidor '+p.delivery_rating+'/5':''}${Number(p.tip_amount)>0?' · propina $'+Number(p.tip_amount).toFixed(2):''}.</div>`;
+    return `<div class="entrega-lista"><div class="icono">🎉</div><h3>¡Pedido entregado!</h3><p>El seguimiento terminó y la ubicación del repartidor se ocultó.</p></div>
+    <form class="resena" onsubmit="enviarResena(event,${p.id})"><h3>Cuéntanos cómo te fue</h3><div class="resena-grid"><div><label>Restaurante</label><select id="calificacionRestaurante" required><option value="">Calificar</option>${[5,4,3,2,1].map(n=>`<option value="${n}">${'★'.repeat(n)} ${n}/5</option>`).join('')}</select></div>${p.delivery_name?`<div><label>Repartidor</label><select id="calificacionRepartidor"><option value="">Sin calificar</option>${[5,4,3,2,1].map(n=>`<option value="${n}">${'★'.repeat(n)} ${n}/5</option>`).join('')}</select></div>`:''}</div><label style="margin-top:12px">Propina para el repartidor</label><div class="propinas"><button type="button" onclick="elegirPropina(0)">Sin propina</button><button type="button" onclick="elegirPropina(10)">$10</button><button type="button" onclick="elegirPropina(20)">$20</button><button type="button" onclick="elegirPropina(30)">$30</button></div><input id="propinaPedido" type="number" min="0" max="1000" step="1" value="0"><small>Se registra para entregarla directamente al repartidor; todavía no es un cobro en línea.</small><label style="margin-top:12px">Comentario opcional</label><textarea id="comentarioResena" maxlength="500" placeholder="¿Qué podemos mejorar?"></textarea><div id="errorResena"></div><button class="enviar-resena">Enviar calificación</button></form>`;
+}
+
+function elegirPropina(monto){document.getElementById('propinaPedido').value=monto;}
+async function enviarResena(event,id){event.preventDefault();const button=event.currentTarget.querySelector('button[type="submit"],.enviar-resena');button.disabled=true;try{const respuesta=await fetch('/api/orders/'+id+'/review',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({restaurantRating:Number(document.getElementById('calificacionRestaurante').value),deliveryRating:document.getElementById('calificacionRepartidor')?.value||null,tipAmount:Number(document.getElementById('propinaPedido').value||0),comment:document.getElementById('comentarioResena').value})});const datos=await respuesta.json();if(!respuesta.ok)throw new Error(datos.error||'No fue posible guardar');await actualizarSeguimiento();await cargarPedidos();}catch(error){document.getElementById('errorResena').textContent='❌ '+error.message;button.disabled=false;}}
 
 function mensajeUbicacion(p,tiene){
     if(p.status==='delivered') return '✅ El pedido ya fue entregado.';
@@ -123,5 +136,6 @@ async function pintarMapa(lat,lng,nombre,destinoLat,destinoLng){
 function escapar(valor){return String(valor??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');}
 cargarPedidos();
 </script>
-<script src="/pwa-install.js" defer></script></body>
+<script src="/pwa-install.js" defer></script><script src="/ui-dialogs.js" defer></script><script src="/ai-assistant.js" defer></script></body>
 </html>
+
