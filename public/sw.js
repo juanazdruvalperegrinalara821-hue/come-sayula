@@ -1,5 +1,5 @@
-const CACHE='come-sayula-shell-v1';
-const SHELL=['/offline.html','/auth.html','/home3.html','/manifest.webmanifest','/pwa-install.js','/icons/icon-192.png','/icons/icon-512.png'];
+const CACHE='come-sayula-shell-v2';
+const SHELL=['/offline.html','/auth.html','/home3.html','/manifest.webmanifest','/pwa-install.js','/ai-assistant.js','/ai-assistant.css','/icons/icon-192.png','/icons/icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(SHELL)).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('come-sayula-')&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{
@@ -11,3 +11,4 @@ self.addEventListener('fetch',event=>{
   }
   event.respondWith(caches.match(request).then(cached=>cached||fetch(request).then(response=>{if(response.ok){const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(request,copy));}return response;})));
 });
+

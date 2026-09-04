@@ -9,6 +9,8 @@ const {OAuth2Client}=require("google-auth-library");
 
 const GOOGLE_CLIENT_ID=process.env.GOOGLE_CLIENT_ID||"846821366103-clbjraiah8qvdb5gia3op8h8rsu4c8ba.apps.googleusercontent.com";
 const googleClient=new OAuth2Client(GOOGLE_CLIENT_ID);
+const OPENAI_API_KEY=String(process.env.OPENAI_API_KEY||'').trim();
+const OPENAI_MODEL=String(process.env.OPENAI_MODEL||'gpt-5-mini').trim();
 const app=express();
 app.set('trust proxy',process.env.TRUST_PROXY==='1'?1:false);
 const dataDir=process.env.DATA_DIR||__dirname;
@@ -71,6 +73,59 @@ const auth=(req,res,next)=>{
 };
 const role=roles=>(req,res,next)=>roles.includes(req.user.role)?next():res.status(403).json({error:'Sin permisos'});
 const audit=(req,action,type,id)=>{try{db.prepare('INSERT INTO audit_logs(user_id,action,entity_type,entity_id,ip_address) VALUES(?,?,?,?,?)').run(req.user?.id||null,action,type||null,id||null,String(req.ip||'').slice(0,64));}catch(e){console.error('AUDIT ERROR',e.message);}};
+
+function aiContextFor(user){
+    if(user.role==='customer'){
+        const restaurants=db.prepare("SELECT id,name,description,address FROM restaurants WHERE active=1 ORDER BY name LIMIT 30").all();
+        const products=db.prepare("SELECT p.id,p.name,p.description,p.price,r.name restaurant FROM products p JOIN restaurants r ON r.id=p.restaurant_id WHERE p.available=1 AND r.active=1 ORDER BY r.name,p.name LIMIT 100").all();
+        const orders=db.prepare("SELECT id,status,payment_method,payment_status,total,created_at FROM orders WHERE customer_id=? ORDER BY id DESC LIMIT 8").all(user.id);
+        return {restaurants,products,myRecentOrders:orders};
+    }
+    if(user.role==='restaurant'){
+        const restaurant=db.prepare('SELECT id,name,description,address,active,latitude,longitude FROM restaurants WHERE owner_id=?').get(user.id);
+        if(!restaurant)return {restaurant:null};
+        const products=db.prepare('SELECT id,name,price,available FROM products WHERE restaurant_id=? ORDER BY id DESC LIMIT 100').all(restaurant.id);
+        const orders=db.prepare('SELECT id,status,payment_method,payment_status,subtotal,delivery_fee,total,created_at FROM orders WHERE restaurant_id=? ORDER BY id DESC LIMIT 30').all(restaurant.id);
+        return {restaurant:{...restaurant,latitude:restaurant.latitude==null?'sin configurar':'configurada',longitude:restaurant.longitude==null?'sin configurar':'configurada'},products,recentOrders:orders};
+    }
+    if(user.role==='delivery'){
+        const assigned=db.prepare("SELECT o.id,o.status,o.payment_method,o.payment_status,o.total,o.created_at,r.name restaurant FROM delivery_assignments da JOIN orders o ON o.id=da.order_id JOIN restaurants r ON r.id=o.restaurant_id WHERE da.delivery_user_id=? ORDER BY o.id DESC LIMIT 20").all(user.id);
+        const available=db.prepare("SELECT o.id,o.status,o.total,o.created_at,r.name restaurant FROM orders o JOIN restaurants r ON r.id=o.restaurant_id LEFT JOIN delivery_assignments da ON da.order_id=o.id WHERE o.status='ready' AND (da.id IS NULL OR da.status='available') ORDER BY o.id LIMIT 20").all();
+        return {myDeliveries:assigned,availableOrders:available};
+    }
+    const counts={
+        customers:db.prepare("SELECT COUNT(*) value FROM users WHERE role='customer'").get().value,
+        restaurants:db.prepare("SELECT COUNT(*) value FROM users WHERE role='restaurant'").get().value,
+        delivery:db.prepare("SELECT COUNT(*) value FROM users WHERE role='delivery'").get().value,
+        pendingAccounts:db.prepare("SELECT COUNT(*) value FROM users WHERE account_status='pending'").get().value,
+        activeOrders:db.prepare("SELECT COUNT(*) value FROM orders WHERE status NOT IN ('delivered','cancelled')").get().value
+    };
+    const recentOrders=db.prepare('SELECT id,status,payment_method,payment_status,total,created_at FROM orders ORDER BY id DESC LIMIT 30').all();
+    return {counts,recentOrders};
+}
+
+const aiRoleInstructions={
+    customer:'Ayuda a elegir productos reales disponibles, usar el carrito, entender pagos y seguir pedidos propios.',
+    restaurant:'Ayuda a completar el perfil, mejorar el menú, interpretar pedidos y sugerir acciones operativas.',
+    delivery:'Ayuda a entender pedidos disponibles y asignados, estados de entrega y procedimientos seguros.',
+    admin:'Resume la operación, detecta datos incompletos o estados anómalos y propone pasos de diagnóstico.'
+};
+
+function extractOpenAIText(data){
+    if(typeof data.output_text==='string'&&data.output_text.trim())return data.output_text.trim();
+    return (data.output||[]).flatMap(item=>item.content||[]).filter(part=>part.type==='output_text').map(part=>part.text).join('\n').trim();
+}
+
+async function openAIRequest(pathname,body){
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),20000);
+    try{
+        const response=await fetch('https://api.openai.com/v1/'+pathname,{method:'POST',headers:{'Authorization':'Bearer '+OPENAI_API_KEY,'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
+        const data=await response.json().catch(()=>({}));
+        if(!response.ok)throw new Error('OpenAI '+response.status+': '+String(data.error?.message||'respuesta inválida').slice(0,180));
+        return data;
+    }finally{clearTimeout(timeout);}
+}
 app.post('/api/auth/register',rateLimit('register',8,15*60*1000),async(req,res)=>{try{const{name,phone,password}=req.body;const email=normalizeEmail(req.body.email);if(!name||!email||!password||String(password).length<8)return res.status(400).json({error:'Completa los datos y usa una contraseña de al menos 8 caracteres'});if(req.body.termsAccepted!==true)return res.status(400).json({error:'Debes aceptar los términos y el aviso de privacidad'});if(req.body.role&&req.body.role!=='customer')return res.status(403).json({error:'El registro público está disponible únicamente para clientes'});if(db.prepare('SELECT id FROM users WHERE email=?').get(email))return res.status(409).json({error:'No fue posible registrar esa cuenta'});const r=db.prepare("INSERT INTO users(name,email,phone,password_hash,role,account_status,terms_accepted_at,terms_version) VALUES(?,?,?,?,'customer','approved',CURRENT_TIMESTAMP,'2026-09-02')").run(String(name).trim().slice(0,100),email,String(phone||'').trim().slice(0,30),await bcrypt.hash(password,12));const u=db.prepare('SELECT id,name,email,phone,role,account_status FROM users WHERE id=?').get(r.lastInsertRowid);audit({user:u,ip:req.ip},'customer_registered','user',u.id);res.status(201).json({token:signToken(publicUser(u)),user:publicUser(u)})}catch(e){console.error(e);res.status(500).json({error:'No fue posible crear la cuenta'})}});
 app.post('/api/auth/login',rateLimit('login',10,15*60*1000),async(req,res)=>{
     const email=(req.body.email||'').trim().toLowerCase();
@@ -749,7 +804,32 @@ app.get('/api/orders/:id/tracking',auth,role(['customer']),(req,res)=>{
     res.json(tracking);
 });
 
-app.get('/api/health',(req,res)=>{try{const integrity=db.pragma('quick_check',{simple:true});res.json({ok:integrity==='ok',database:integrity,time:new Date().toISOString()});}catch(error){res.status(503).json({ok:false,requestId:req.requestId});}});
+app.get('/api/ai/status',auth,(req,res)=>res.json({enabled:Boolean(OPENAI_API_KEY),model:OPENAI_API_KEY?OPENAI_MODEL:null}));
+
+app.post('/api/ai/chat',auth,rateLimit('ai-chat',20,60*60*1000),async(req,res)=>{
+    const message=String(req.body.message||'').trim().slice(0,800);
+    if(!OPENAI_API_KEY)return res.status(503).json({error:'El asistente todavía no está activado por el administrador'});
+    if(message.length<2)return res.status(400).json({error:'Escribe una pregunta para el asistente'});
+    try{
+        const moderation=await openAIRequest('moderations',{model:'omni-moderation-latest',input:message});
+        if(moderation.results?.[0]?.flagged){
+            audit(req,'ai_message_blocked','ai',null);
+            return res.status(400).json({error:'No puedo procesar ese mensaje. Reformula tu solicitud.'});
+        }
+        const context=aiContextFor(req.user);
+        const instructions=`Eres el asistente oficial de COME SAYULA, una plataforma local de comida y reparto en Sayula, Jalisco. Responde en español claro y breve. Rol actual: ${req.user.role}. ${aiRoleInstructions[req.user.role]||''}\nUsa únicamente los datos del CONTEXTO para precios, disponibilidad y estados. Si falta un dato, dilo; nunca lo inventes. No solicites contraseñas, códigos, datos bancarios ni ubicación exacta. No afirmes haber modificado pedidos, pagos, cuentas, productos o código: solo orientas y propones pasos. Para emergencias o riesgo físico indica contactar servicios locales. Los pagos, cancelaciones, suspensiones y cambios operativos requieren confirmación humana.`;
+        const response=await openAIRequest('responses',{model:OPENAI_MODEL,instructions,input:`CONTEXTO (sin datos personales):\n${JSON.stringify(context)}\n\nPREGUNTA:\n${message}`,max_output_tokens:450,store:false});
+        const answer=extractOpenAIText(response);
+        if(!answer)throw new Error('OpenAI no devolvió texto');
+        audit(req,'ai_assistant_used','ai',null);
+        res.json({answer:answer.slice(0,4000)});
+    }catch(error){
+        console.error('AI ERROR ['+req.requestId+']',error.message);
+        res.status(502).json({error:'El asistente no está disponible por el momento',requestId:req.requestId});
+    }
+});
+
+app.get('/api/health',(req,res)=>{try{const integrity=db.pragma('quick_check',{simple:true});res.json({ok:integrity==='ok',database:integrity,aiConfigured:Boolean(OPENAI_API_KEY),time:new Date().toISOString()});}catch(error){res.status(503).json({ok:false,requestId:req.requestId});}});
 
 const backupsDir=path.join(dataDir,'backups');
 async function automaticBackup(){
@@ -762,3 +842,4 @@ app.use((error,req,res,next)=>{console.error('REQUEST ERROR',req.requestId,error
 
 const PORT=Number(process.env.PORT||3000);
 app.listen(PORT,()=>console.log('COME SAYULA: http://localhost:'+PORT));
+

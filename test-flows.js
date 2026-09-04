@@ -1,7 +1,7 @@
 const fs=require('fs'),path=require('path'),os=require('os'),{spawn}=require('child_process'),crypto=require('crypto');
 const root=__dirname,dbFile=path.join(os.tmpdir(),'test-come-sayula.db'),port=3199,base=`http://127.0.0.1:${port}`;
 for(const suffix of ['', '-wal','-shm'])try{fs.unlinkSync(dbFile+suffix)}catch(e){}
-const child=spawn(process.execPath,['server.js'],{cwd:root,env:{...process.env,DATA_DIR:os.tmpdir(),DB_FILE:dbFile,PORT:String(port),ADMIN_EMAIL:'admin@test.local',ADMIN_PASSWORD:'Admin-Pruebas-2026',DISABLE_AUTOMATIC_BACKUP:'1'},stdio:['ignore','pipe','pipe']});
+const child=spawn(process.execPath,['server.js'],{cwd:root,env:{...process.env,OPENAI_API_KEY:'',DATA_DIR:os.tmpdir(),DB_FILE:dbFile,PORT:String(port),ADMIN_EMAIL:'admin@test.local',ADMIN_PASSWORD:'Admin-Pruebas-2026',DISABLE_AUTOMATIC_BACKUP:'1'},stdio:['ignore','pipe','pipe']});
 let serverError='';child.stderr.on('data',chunk=>serverError+=chunk.toString());
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 async function api(url,{token,method='GET',body}={}){const response=await fetch(base+url,{method,headers:{...(body?{'Content-Type':'application/json'}:{}),...(token?{Authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});let data={};try{data=await response.json()}catch(e){}return {status:response.status,data};}
@@ -12,6 +12,8 @@ async function run(){
   const denied=await api('/api/auth/register',{method:'POST',body:{name:'Intruso',email:'staff-public@test.local',password:'Contrasena12',role:'delivery',termsAccepted:true}});ok(denied.status===403,'registro público bloquea roles operativos');
   const customer=await api('/api/auth/register',{method:'POST',body:{name:'Cliente Prueba',email:'cliente@test.local',phone:'3410000000',password:'Cliente-Prueba-12',role:'customer',termsAccepted:true}});ok(customer.status===201,'registro público permite clientes con consentimiento');
   const admin=await login('admin@test.local','Admin-Pruebas-2026','admin');
+  const aiStatus=await api('/api/ai/status',{token:admin});ok(aiStatus.status===200&&aiStatus.data.enabled===false,'asistente informa cuando falta configuración');
+  const aiUnavailable=await api('/api/ai/chat',{token:admin,method:'POST',body:{message:'Resume la operación'}});ok(aiUnavailable.status===503,'asistente falla de forma segura sin clave');
   for(const user of [{name:'Restaurante Prueba',email:'rest@test.local',phone:'3411',password:'Restaurante-12',role:'restaurant'},{name:'Repartidor Uno',email:'rep1@test.local',password:'Repartidor-uno-12',role:'delivery'},{name:'Repartidor Dos',email:'rep2@test.local',password:'Repartidor-dos-12',role:'delivery'}]){const c=await api('/api/admin/users',{token:admin,method:'POST',body:user});ok(c.status===201,'administrador crea '+user.role);const a=await api('/api/admin/users/'+c.data.id+'/status',{token:admin,method:'PATCH',body:{status:'approved'}});ok(a.status===200,'administrador aprueba '+user.email)}
   const restaurant=await login('rest@test.local','Restaurante-12','restaurant'),d1=await login('rep1@test.local','Repartidor-uno-12','delivery'),d2=await login('rep2@test.local','Repartidor-dos-12','delivery');
   await api('/api/restaurant/location',{token:restaurant,method:'PUT',body:{latitude:19.8826,longitude:-103.5998}});
@@ -27,3 +29,4 @@ async function run(){
   console.log('\nTodas las pruebas controladas terminaron correctamente.');
 }
 run().catch(error=>{console.error('PRUEBA FALLIDA:',error.message);process.exitCode=1}).finally(()=>{child.kill();setTimeout(()=>{for(const suffix of ['', '-wal','-shm'])try{fs.unlinkSync(dbFile+suffix)}catch(e){}},300)});
+
