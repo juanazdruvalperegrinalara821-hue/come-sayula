@@ -202,6 +202,82 @@ app.patch('/api/admin/restaurants/:id/visibility',auth,role(['admin']),(req,res)
     if(result.changes!==1)return res.status(404).json({error:'Restaurante no encontrado'});
     audit(req,'restaurant_visibility_updated','restaurant',id);res.json({ok:true,category,priority,featured:Boolean(featured)});
 });
+
+const feedbackLabels={error:'Error',suggestion:'Sugerencia',complaint:'Inconformidad',praise:'Felicitación'};
+const feedbackStatuses=['received','reviewing','accepted','resolved'];
+const feedbackSeverities=['low','normal','high','critical'];
+const feedbackGroupKey=(category,comment,answers)=>{
+    const words=(comment+' '+answers.join(' ')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(word=>word.length>3).slice(0,8).sort().join('|');
+    return crypto.createHash('sha256').update(category+'|'+words).digest('hex').slice(0,24);
+};
+const canUseOrder=(user,orderId)=>{
+    if(!orderId)return true;
+    if(user.role==='customer')return Boolean(db.prepare('SELECT id FROM orders WHERE id=? AND customer_id=?').get(orderId,user.id));
+    if(user.role==='restaurant')return Boolean(db.prepare('SELECT o.id FROM orders o JOIN restaurants r ON r.id=o.restaurant_id WHERE o.id=? AND r.owner_id=?').get(orderId,user.id));
+    if(user.role==='delivery')return Boolean(db.prepare('SELECT order_id FROM delivery_assignments WHERE order_id=? AND delivery_user_id=?').get(orderId,user.id));
+    return false;
+};
+
+app.get('/api/feedback/orders',auth,role(['customer','restaurant','delivery']),(req,res)=>{
+    let rows=[];
+    if(req.user.role==='customer')rows=db.prepare('SELECT id,status,created_at FROM orders WHERE customer_id=? ORDER BY id DESC LIMIT 30').all(req.user.id);
+    if(req.user.role==='restaurant')rows=db.prepare('SELECT o.id,o.status,o.created_at FROM orders o JOIN restaurants r ON r.id=o.restaurant_id WHERE r.owner_id=? ORDER BY o.id DESC LIMIT 30').all(req.user.id);
+    if(req.user.role==='delivery')rows=db.prepare('SELECT o.id,o.status,o.created_at FROM orders o JOIN delivery_assignments da ON da.order_id=o.id WHERE da.delivery_user_id=? ORDER BY o.id DESC LIMIT 30').all(req.user.id);
+    res.json(rows);
+});
+
+app.post('/api/feedback/upload',auth,role(['customer','restaurant','delivery']),rateLimit('feedback-upload',10,60*60*1000),(req,res)=>{
+    const match=String(req.body.dataUrl||'').match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
+    if(!match)return res.status(400).json({error:'Usa una captura PNG, JPG o WEBP'});
+    const buffer=Buffer.from(match[2],'base64');
+    if(!buffer.length||buffer.length>4*1024*1024)return res.status(400).json({error:'La captura debe pesar menos de 4 MB'});
+    const extension=match[1]==='image/png'?'png':match[1]==='image/webp'?'webp':'jpg';
+    const fileName='feedback-'+crypto.randomUUID()+'.'+extension;
+    fs.writeFileSync(path.join(uploadsDir,fileName),buffer,{mode:0o600});
+    res.status(201).json({url:'/uploads/'+fileName});
+});
+
+app.post('/api/feedback',auth,role(['customer','restaurant','delivery']),rateLimit('feedback-create',12,60*60*1000),(req,res)=>{
+    const category=String(req.body.category||''),rating=Number(req.body.rating),comment=String(req.body.comment||'').trim().slice(0,1500),anonymous=req.body.anonymous?1:0,contactAllowed=req.body.contactAllowed?1:0;
+    const answers=Array.isArray(req.body.answers)?req.body.answers.map(value=>String(value||'').trim().slice(0,500)).slice(0,6):[];
+    const orderId=req.body.orderId?Number(req.body.orderId):null;
+    const screenshotUrl=String(req.body.screenshotUrl||'').trim();
+    if(!feedbackLabels[category]||!Number.isInteger(rating)||rating<1||rating>5||answers.some(value=>!value)||!comment)return res.status(400).json({error:'Completa las preguntas, el comentario y la calificación'});
+    if(orderId!==null&&(!Number.isInteger(orderId)||orderId<=0||!canUseOrder(req.user,orderId)))return res.status(403).json({error:'No puedes relacionar ese pedido'});
+    if(screenshotUrl&&!/^\/uploads\/feedback-[a-f0-9-]+\.(png|jpg|webp)$/.test(screenshotUrl))return res.status(400).json({error:'Captura inválida'});
+    const trackingCode=crypto.randomBytes(12).toString('hex'),groupKey=feedbackGroupKey(category,comment,answers);
+    const contact=anonymous?{}:{name:String(req.user.name||'').slice(0,100),email:String(req.user.email||'').slice(0,254),phone:String(req.user.phone||'').slice(0,30)};
+    const result=db.prepare(`INSERT INTO feedback_reports(tracking_code,user_id,user_role,category,rating,answers_json,comment,screenshot_url,order_id,anonymous,contact_allowed,contact_name,contact_email,contact_phone,group_key)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(trackingCode,anonymous?null:req.user.id,req.user.role,category,rating,JSON.stringify(answers),comment,screenshotUrl||null,orderId,anonymous,contactAllowed,contact.name||null,contact.email||null,contact.phone||null,groupKey);
+    audit(req,'feedback_created','feedback',Number(result.lastInsertRowid));
+    res.status(201).json({id:Number(result.lastInsertRowid),trackingCode,status:'received'});
+});
+
+app.get('/api/feedback/status/:code',rateLimit('feedback-status',60,60*60*1000),(req,res)=>{
+    const code=String(req.params.code||'');
+    if(!/^[a-f0-9]{24}$/.test(code))return res.status(404).json({error:'Folio no encontrado'});
+    const report=db.prepare('SELECT id,tracking_code,user_role,category,rating,status,severity,created_at,updated_at FROM feedback_reports WHERE tracking_code=?').get(code);
+    if(!report)return res.status(404).json({error:'Folio no encontrado'});
+    res.json(report);
+});
+
+app.get('/api/admin/feedback',auth,role(['admin']),(req,res)=>{
+    const roleFilter=['customer','restaurant','delivery'].includes(String(req.query.role||''))?String(req.query.role):null;
+    const statusFilter=feedbackStatuses.includes(String(req.query.status||''))?String(req.query.status):null;
+    const severityFilter=feedbackSeverities.includes(String(req.query.severity||''))?String(req.query.severity):null;
+    const reports=db.prepare(`SELECT f.*,COUNT(g.id) AS frequency FROM feedback_reports f LEFT JOIN feedback_reports g ON g.group_key=f.group_key
+        WHERE (? IS NULL OR f.user_role=?) AND (? IS NULL OR f.status=?) AND (? IS NULL OR f.severity=?)
+        GROUP BY f.id ORDER BY CASE f.severity WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'normal' THEN 2 ELSE 1 END DESC,frequency DESC,f.created_at DESC LIMIT 300`).all(roleFilter,roleFilter,statusFilter,statusFilter,severityFilter,severityFilter);
+    res.json(reports.map(item=>({...item,answers:JSON.parse(item.answers_json||'[]'),anonymous:Boolean(item.anonymous),contact_allowed:Boolean(item.contact_allowed),category_label:feedbackLabels[item.category]})));
+});
+
+app.patch('/api/admin/feedback/:id',auth,role(['admin']),(req,res)=>{
+    const id=Number(req.params.id),status=String(req.body.status||''),severity=String(req.body.severity||''),notes=String(req.body.adminNotes||'').trim().slice(0,1500);
+    if(!Number.isInteger(id)||!feedbackStatuses.includes(status)||!feedbackSeverities.includes(severity))return res.status(400).json({error:'Estado o gravedad inválidos'});
+    const result=db.prepare('UPDATE feedback_reports SET status=?,severity=?,admin_notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(status,severity,notes,id);
+    if(result.changes!==1)return res.status(404).json({error:'Opinión no encontrada'});
+    audit(req,'feedback_updated','feedback',id);res.json({ok:true,status,severity});
+});
 app.get('/api/restaurants',(req,res)=>{const registrados=db.prepare(`SELECT r.id,r.name,r.description,r.address,r.phone,r.image,r.category,r.priority,r.featured,
     ROUND(AVG(rv.restaurant_rating),1) AS rating,COUNT(rv.id) AS ratingCount,
     'registered' AS listingType,'Verificado' AS verificationStatus,NULL AS sourceUrl

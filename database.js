@@ -17,6 +17,31 @@ CREATE TABLE IF NOT EXISTS order_items(id INTEGER PRIMARY KEY AUTOINCREMENT,orde
 CREATE TABLE IF NOT EXISTS directory_entries(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL UNIQUE,category TEXT NOT NULL,description TEXT,address TEXT,phone TEXT,hours TEXT,source_url TEXT NOT NULL,verification_status TEXT NOT NULL DEFAULT 'Pendiente de confirmar',active INTEGER NOT NULL DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS delivery_assignments(id INTEGER PRIMARY KEY AUTOINCREMENT,order_id INTEGER NOT NULL UNIQUE,delivery_user_id INTEGER,status TEXT NOT NULL DEFAULT 'available',accepted_at TEXT,delivered_at TEXT,latitude REAL,longitude REAL,location_accuracy REAL,location_updated_at TEXT,FOREIGN KEY(order_id) REFERENCES orders(id),FOREIGN KEY(delivery_user_id) REFERENCES users(id));
 CREATE TABLE IF NOT EXISTS order_reviews(id INTEGER PRIMARY KEY AUTOINCREMENT,order_id INTEGER NOT NULL UNIQUE,customer_id INTEGER NOT NULL,restaurant_id INTEGER NOT NULL,delivery_user_id INTEGER,restaurant_rating INTEGER NOT NULL CHECK(restaurant_rating BETWEEN 1 AND 5),delivery_rating INTEGER CHECK(delivery_rating BETWEEN 1 AND 5),comment TEXT,tip_amount REAL NOT NULL DEFAULT 0 CHECK(tip_amount>=0 AND tip_amount<=1000),tip_method TEXT NOT NULL DEFAULT 'cash',created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(order_id) REFERENCES orders(id),FOREIGN KEY(customer_id) REFERENCES users(id),FOREIGN KEY(restaurant_id) REFERENCES restaurants(id),FOREIGN KEY(delivery_user_id) REFERENCES users(id));
+CREATE TABLE IF NOT EXISTS feedback_reports(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tracking_code TEXT NOT NULL UNIQUE,
+    user_id INTEGER,
+    user_role TEXT NOT NULL CHECK(user_role IN ('customer','restaurant','delivery')),
+    category TEXT NOT NULL CHECK(category IN ('error','suggestion','complaint','praise')),
+    rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+    answers_json TEXT NOT NULL,
+    comment TEXT,
+    screenshot_url TEXT,
+    order_id INTEGER,
+    anonymous INTEGER NOT NULL DEFAULT 0,
+    contact_allowed INTEGER NOT NULL DEFAULT 0,
+    contact_name TEXT,
+    contact_email TEXT,
+    contact_phone TEXT,
+    status TEXT NOT NULL DEFAULT 'received' CHECK(status IN ('received','reviewing','accepted','resolved')),
+    severity TEXT NOT NULL DEFAULT 'normal' CHECK(severity IN ('low','normal','high','critical')),
+    group_key TEXT NOT NULL,
+    admin_notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE SET NULL
+);
 `);
 
 function ensureColumn(table, column, definition){
@@ -95,6 +120,9 @@ ON delivery_locations(updated_at);
 CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id,expires_at);
 CREATE INDEX IF NOT EXISTS idx_reviews_restaurant ON order_reviews(restaurant_id,created_at);
 CREATE INDEX IF NOT EXISTS idx_reviews_delivery ON order_reviews(delivery_user_id,created_at);
+CREATE INDEX IF NOT EXISTS idx_feedback_admin ON feedback_reports(status,severity,created_at);
+CREATE INDEX IF NOT EXISTS idx_feedback_group ON feedback_reports(group_key,created_at);
+CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback_reports(user_id,created_at);
 `);
 
 module.exports = db;
