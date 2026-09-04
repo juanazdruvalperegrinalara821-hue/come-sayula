@@ -73,6 +73,8 @@ const auth=(req,res,next)=>{
 };
 const role=roles=>(req,res,next)=>roles.includes(req.user.role)?next():res.status(403).json({error:'Sin permisos'});
 const audit=(req,action,type,id)=>{try{db.prepare('INSERT INTO audit_logs(user_id,action,entity_type,entity_id,ip_address) VALUES(?,?,?,?,?)').run(req.user?.id||null,action,type||null,id||null,String(req.ip||'').slice(0,64));}catch(e){console.error('AUDIT ERROR',e.message);}};
+const recordOrderStatus=(orderId,fromStatus,toStatus,user,note='')=>db.prepare('INSERT INTO order_status_history(order_id,from_status,to_status,actor_user_id,actor_role,note) VALUES(?,?,?,?,?,?)').run(orderId,fromStatus||null,toStatus,user?.id||null,user?.role||'system',String(note||'').slice(0,300));
+const deliveryPinFor=orderId=>{const hex=crypto.createHmac('sha256',SECRET).update('delivery:'+orderId).digest('hex');return String(parseInt(hex.slice(0,8),16)%10000).padStart(4,'0');};
 
 function aiContextFor(user){
     if(user.role==='customer'){
@@ -317,7 +319,7 @@ app.post('/api/orders',auth,role(['customer']),rateLimit('orders',12,10*60*1000)
     const quote=deliveryQuote(restaurant,lat,lng);
     const total=Math.round((subtotal+quote.deliveryFee)*100)/100;
     const paymentStatus=paymentMethod==='Transferencia'?'awaiting_confirmation':'pay_on_delivery';
-    const orderId=db.transaction(()=>{const order=db.prepare('INSERT INTO orders(customer_id,restaurant_id,address,payment_method,total,delivery_latitude,delivery_longitude,subtotal,delivery_fee,distance_km,payment_status,client_request_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(req.user.id,restaurantId,String(address).trim().slice(0,500),paymentMethod,total,lat,lng,subtotal,quote.deliveryFee,quote.distanceKm,paymentStatus,clientRequestId);const insert=db.prepare('INSERT INTO order_items(order_id,product_id,product_name,unit_price,quantity) VALUES(?,?,?,?,?)');normalized.forEach(item=>insert.run(order.lastInsertRowid,item.id,item.name,item.price,item.quantity));return Number(order.lastInsertRowid);})();
+    const orderId=db.transaction(()=>{const order=db.prepare('INSERT INTO orders(customer_id,restaurant_id,address,payment_method,total,delivery_latitude,delivery_longitude,subtotal,delivery_fee,distance_km,payment_status,client_request_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(req.user.id,restaurantId,String(address).trim().slice(0,500),paymentMethod,total,lat,lng,subtotal,quote.deliveryFee,quote.distanceKm,paymentStatus,clientRequestId);const id=Number(order.lastInsertRowid);const insert=db.prepare('INSERT INTO order_items(order_id,product_id,product_name,unit_price,quantity) VALUES(?,?,?,?,?)');normalized.forEach(item=>insert.run(id,item.id,item.name,item.price,item.quantity));recordOrderStatus(id,null,'received',req.user,'Pedido creado por el cliente');return id;})();
     audit(req,'order_created','order',orderId);
     res.status(201).json({orderId,total,subtotal,deliveryFee:quote.deliveryFee,distanceKm:quote.distanceKm,paymentStatus});
 });
@@ -510,7 +512,8 @@ app.patch('/api/restaurant/orders/:id',auth,role(['restaurant']),(req,res)=>{
     }
 
     const transitions={
-        received:['preparing','cancelled'],
+        received:['accepted','cancelled'],
+        accepted:['preparing','cancelled'],
         preparing:['ready','cancelled'],
         ready:[],
         cancelled:[]
@@ -519,8 +522,7 @@ app.patch('/api/restaurant/orders/:id',auth,role(['restaurant']),(req,res)=>{
         return res.status(400).json({error:'Ese cambio de estado no está permitido'});
     }
 
-    const result=db.prepare('UPDATE orders SET status=? WHERE id=? AND restaurant_id=? AND status=?')
-        .run(req.body.status,order.id,restaurant.id,order.status);
+    const result=db.transaction(()=>{const changed=db.prepare('UPDATE orders SET status=? WHERE id=? AND restaurant_id=? AND status=?').run(req.body.status,order.id,restaurant.id,order.status);if(changed.changes===1)recordOrderStatus(order.id,order.status,req.body.status,req.user);return changed;})();
     if(result.changes!==1) return res.status(409).json({error:'El pedido cambió; actualiza el panel'});
     audit(req,'restaurant_order_'+req.body.status,'order',order.id);
     res.json({ok:true,status:req.body.status});
@@ -604,7 +606,7 @@ app.post('/api/delivery/orders/:id/accept',auth,role(['delivery']),(req,res)=>{
 
         const resultado = db.transaction(()=>{
 
-            const active=db.prepare("SELECT da.order_id FROM delivery_assignments da JOIN orders o ON o.id=da.order_id WHERE da.delivery_user_id=? AND da.status='accepted' AND o.status IN ('ready','delivering') AND da.order_id<>?").get(req.user.id,orderId);
+            const active=db.prepare("SELECT da.order_id FROM delivery_assignments da JOIN orders o ON o.id=da.order_id WHERE da.delivery_user_id=? AND da.status='accepted' AND o.status IN ('assigned','delivering') AND da.order_id<>?").get(req.user.id,orderId);
             if(active)throw new Error('Termina tu entrega activa antes de aceptar otra');
 
             const pedido = db.prepare(`
@@ -663,6 +665,10 @@ app.post('/api/delivery/orders/:id/accept',auth,role(['delivery']),(req,res)=>{
                 );
 
             }
+
+            const statusChange=db.prepare("UPDATE orders SET status='assigned' WHERE id=? AND status='ready'").run(orderId);
+            if(statusChange.changes!==1)throw new Error('El pedido cambió antes de asignarse');
+            recordOrderStatus(orderId,'ready','assigned',req.user,'Repartidor asignado');
 
             return db.prepare(`
                 SELECT *
@@ -780,15 +786,14 @@ app.patch('/api/delivery/orders/:id',auth,role(['delivery']),(req,res)=>{
         });
     }
 
-    // El único cambio permitido es:
-    // delivering → delivered
     if(nuevoEstado==='delivering'){
-        if(pedido.status!=='ready'){
+        if(pedido.status!=='assigned'){
             return res.status(400).json({
                 error:'El pedido no está listo para ser recogido'
             });
         }
-        db.prepare("UPDATE orders SET status='delivering' WHERE id=? AND status='ready'").run(orderId);
+        const changed=db.transaction(()=>{const result=db.prepare("UPDATE orders SET status='delivering' WHERE id=? AND status='assigned'").run(orderId);if(result.changes===1)recordOrderStatus(orderId,'assigned','delivering',req.user,'Pedido recogido');return result;})();
+        if(changed.changes!==1)return res.status(409).json({error:'El pedido cambió; actualiza el panel'});
         audit(req,'order_picked_up','order',orderId);
         return res.json({
             ok:true,
@@ -803,6 +808,7 @@ app.patch('/api/delivery/orders/:id',auth,role(['delivery']),(req,res)=>{
                 error:'El pedido debe estar en camino antes de marcarlo como entregado'
             });
         }
+        if(!/^\d{4}$/.test(String(req.body.deliveryPin||''))||String(req.body.deliveryPin)!==deliveryPinFor(orderId))return res.status(403).json({error:'El código de entrega es incorrecto'});
 
         const resultado=db.transaction(()=>{
 
@@ -837,6 +843,8 @@ app.patch('/api/delivery/orders/:id',auth,role(['delivery']),(req,res)=>{
                     'El pedido ya no puede modificarse'
                 );
             }
+
+            recordOrderStatus(orderId,'delivering','delivered',req.user,'PIN del cliente validado');
 
             return true;
         })();
@@ -908,6 +916,8 @@ app.get('/api/orders/:id/tracking',auth,role(['customer']),(req,res)=>{
         tracking.location_updated_at=null;
         tracking.delivery_phone=null;
     }
+    tracking.delivery_pin=['assigned','delivering'].includes(tracking.status)?deliveryPinFor(orderId):null;
+    tracking.history=db.prepare('SELECT from_status,to_status,actor_role,note,created_at FROM order_status_history WHERE order_id=? ORDER BY id').all(orderId);
     res.json(tracking);
 });
 

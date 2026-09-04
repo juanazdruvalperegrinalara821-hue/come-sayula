@@ -552,7 +552,7 @@ function mostrarPedidos(pedidos){
         document.getElementById('pedidos');
 
     const nuevos =
-        pedidos.filter(p => p.status === 'received').length;
+        pedidos.filter(p => ['received','accepted'].includes(p.status)).length;
 
     const preparando =
         pedidos.filter(p => p.status === 'preparing').length;
@@ -593,12 +593,14 @@ function mostrarPedidos(pedidos){
         const estado = pedido.status || 'received';
 
         const nombresEstado={
-            received:'🟠 Recibido',preparing:'👨‍🍳 Preparando',ready:'🟢 Listo para recoger',
-            delivering:'🛵 Con el repartidor',delivered:'✅ Entregado',cancelled:'❌ Cancelado'
+            received:'🟠 Recibido',accepted:'👍 Aceptado',preparing:'👨‍🍳 Preparando',ready:'🟢 Listo para recoger',assigned:'🛵 Repartidor asignado',
+            delivering:'🛵 En camino',delivered:'✅ Entregado',cancelled:'❌ Cancelado'
         };
 
         let controlEstado='';
         if(estado==='received'){
+            controlEstado=`<div class="acciones-estado"><button onclick="cambiarEstado(${pedido.id},'accepted')">👍 Aceptar pedido</button><button class="cancelar" onclick="cambiarEstado(${pedido.id},'cancelled')">Cancelar pedido</button></div>`;
+        }else if(estado==='accepted'){
             controlEstado=`<div class="acciones-estado"><button onclick="cambiarEstado(${pedido.id},'preparing')">👨‍🍳 Comenzar preparación</button><button class="cancelar" onclick="cambiarEstado(${pedido.id},'cancelled')">Cancelar pedido</button></div>`;
         }else if(estado==='preparing'){
             controlEstado=`<div class="acciones-estado"><button onclick="cambiarEstado(${pedido.id},'ready')">✅ Pedido listo para recoger</button><button class="cancelar" onclick="cambiarEstado(${pedido.id},'cancelled')">Cancelar pedido</button></div>`;
@@ -606,6 +608,8 @@ function mostrarPedidos(pedidos){
             controlEstado='<div class="bloqueado">🔒 Repartidor asignado<br><small>Esperando que confirme la recogida</small></div>';
         }else if(estado==='ready'){
             controlEstado='<div class="bloqueado">⏳ Esperando que un repartidor acepte el pedido</div>';
+        }else if(estado==='assigned'){
+            controlEstado='<div class="bloqueado">🛵 Repartidor asignado. El pedido quedó bloqueado.</div>';
         }else if(estado==='delivering'){
             controlEstado='<div class="bloqueado">🔒 Pedido entregado al repartidor<br><small>Ya no puede modificarse</small></div>';
         }else if(estado==='delivered'){

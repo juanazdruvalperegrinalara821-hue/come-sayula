@@ -42,6 +42,18 @@ CREATE TABLE IF NOT EXISTS feedback_reports(
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE SET NULL
 );
+CREATE TABLE IF NOT EXISTS order_status_history(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL,
+    from_status TEXT,
+    to_status TEXT NOT NULL,
+    actor_user_id INTEGER,
+    actor_role TEXT NOT NULL,
+    note TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY(actor_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
 `);
 
 function ensureColumn(table, column, definition){
@@ -123,6 +135,7 @@ CREATE INDEX IF NOT EXISTS idx_reviews_delivery ON order_reviews(delivery_user_i
 CREATE INDEX IF NOT EXISTS idx_feedback_admin ON feedback_reports(status,severity,created_at);
 CREATE INDEX IF NOT EXISTS idx_feedback_group ON feedback_reports(group_key,created_at);
 CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback_reports(user_id,created_at);
+CREATE INDEX IF NOT EXISTS idx_order_status_history ON order_status_history(order_id,created_at);
 `);
 
 module.exports = db;

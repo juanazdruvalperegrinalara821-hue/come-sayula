@@ -641,9 +641,9 @@ async function cargarMisPedidos(){
         </div>
     `
 
-    : p.status === 'ready'
+    : p.status === 'assigned'
       ? `<button class="aceptar" onclick="cambiarEstado(${p.id},'delivering')">📦 Confirmar que recogí el pedido</button>`
-      : `<button class="aceptar" style="background:#16a34a" onclick="cambiarEstado(${p.id},'delivered')">✅ Confirmar entrega al cliente</button>`
+      : `<button class="aceptar" style="background:#16a34a" onclick="cambiarEstado(${p.id},'delivered')">✅ Confirmar entrega con PIN</button>`
 }   
         </div>
 
@@ -654,7 +654,7 @@ async function cargarMisPedidos(){
         if(destinoActivo)dibujarRuta(ultimaUbicacion,destinoActivo,false);
     }
 
-    const entregaEnCurso=datos.find(p=>p.delivery_status==='accepted'&&['ready','delivering'].includes(p.status));
+    const entregaEnCurso=datos.find(p=>p.delivery_status==='accepted'&&['assigned','delivering'].includes(p.status));
     if(entregaEnCurso&&!seguimientoActivo)seguimientoActivo=entregaEnCurso.id;
 
 }
@@ -785,6 +785,11 @@ async function cambiarEstado(
 ){
 
     try{
+        let deliveryPin='';
+        if(estado==='delivered'){
+            deliveryPin=String(prompt('Pide al cliente su código de entrega de 4 dígitos:')||'').trim();
+            if(!/^\d{4}$/.test(deliveryPin))throw new Error('Escribe los 4 dígitos del código de entrega.');
+        }
 
         const respuesta =
             await fetch(
@@ -802,7 +807,7 @@ async function cambiarEstado(
                     },
 
                     body:JSON.stringify({
-                        status:estado
+                        status:estado,deliveryPin
                     })
                 }
             );

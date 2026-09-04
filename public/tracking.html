@@ -30,7 +30,7 @@ header h1{margin:0;font-size:23px}header button{border:0;background:white;color:
 const token=sessionStorage.getItem('cs_token');
 const usuario=JSON.parse(sessionStorage.getItem('cs_user')||'null');
 let pedidoActivo=null,mapa=null,marcador=null,marcadorDestino=null,lineaRuta=null,temporizador=null;
-const nombresEstado={received:'Pedido recibido',preparing:'En preparación',ready:'Listo para recoger',delivering:'En camino',delivered:'Entregado',cancelled:'Cancelado'};
+const nombresEstado={received:'Pedido recibido',accepted:'Aceptado por el restaurante',preparing:'En preparación',ready:'Listo para recoger',assigned:'Repartidor asignado',delivering:'En camino',delivered:'Entregado',cancelled:'Cancelado'};
 
 if(!token||!usuario||usuario.role!=='customer') location.href='/home3.html';
 
@@ -80,6 +80,7 @@ async function actualizarSeguimiento(){
                 🏠 Entrega: ${escapar(p.address)}<br>
                 🛵 Repartidor: ${escapar(p.delivery_name||'Aún no asignado')}
                 ${p.delivery_phone?'<br>📞 '+escapar(p.delivery_phone):''}
+                ${p.delivery_pin?'<div style="margin-top:12px;background:#fff3cd;padding:12px;border-radius:10px"><strong>🔐 Código de entrega: <span style="font-size:24px;letter-spacing:5px">'+p.delivery_pin+'</span></strong><br><small>Díselo al repartidor únicamente cuando recibas tu pedido.</small></div>':''}
             </div>
             <div class="actualizacion">${mensajeUbicacion(p,tieneUbicacion)}</div>
             ${finalizado?panelFinal(p):`<div id="resumenRuta" class="actualizacion"></div><div id="mapa"><div class="espera">${tieneUbicacion?'Cargando mapa…':'El mapa aparecerá cuando el repartidor comparta su ubicación.'}</div></div>`}`;
