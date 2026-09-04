@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>COME SAYULA - Panel Restaurante</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<style>
+*{
+    box-sizing:border-box;
+    margin:0;
+    padding:0;
+}
+
+body{
+    font-family:Arial, sans-serif;
+    background:linear-gradient(180deg,#fff8f1 0,#f4f6f8 320px);
+    color:#222;
+}
+
+header{
+    background:linear-gradient(135deg,#e85d04,#f48c06);
+    color:white;
+    padding:22px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:15px;
+    flex-wrap:wrap;
+    position:sticky;
+    top:0;
+    z-index:10;
+    box-shadow:0 5px 18px rgba(90,42,5,.18);
+}
+
+header h1{
+    font-size:25px;
+}
+
+header button{
+    border:none;
+    padding:10px 16px;
+    border-radius:10px;
+    cursor:pointer;
+    font-weight:bold;
+}
+
+#cerrarSesion{
+    background:white;
+    color:#d94801;
+}
+
+.container{
+    max-width:1200px;
+    margin:auto;
+    padding:25px;
+}
+
+.restaurante-info{
+    background:white;
+    padding:20px;
+    border-radius:16px;
+    margin-bottom:25px;
+    box-shadow:0 3px 12px rgba(0,0,0,.08);
+}
+
+.restaurante-info h2{
+    margin-bottom:8px;
+}
+
+.stats{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:15px;
+    margin-bottom:25px;
+}
+
+.stat{
+    background:white;
+    border-radius:15px;
+    padding:20px;
+    text-align:center;
+    box-shadow:0 3px 12px rgba(0,0,0,.07);
+}
+
+.stat strong{
+    display:block;
+    font-size:30px;
+    margin-bottom:5px;
+}
+
+.orders{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(330px,1fr));
+    gap:20px;
+}
+
+.order{
+    background:white;
+    border-radius:18px;
+    padding:20px;
+    border:1px solid #eee3d8;
+    box-shadow:0 8px 24px rgba(73,44,24,.08);
+}
+
+.order.new{
+    border-left:6px solid #e85d04;
+}
+
+.order h3{
+    margin-bottom:8px;
+}
+
+.order-info{
+    margin:8px 0;
+    color:#555;
+    line-height:1.5;
+}
+
+.items{
+    background:#f7f7f7;
+    padding:12px;
+    border-radius:10px;
+    margin:15px 0;
+}
+
+.item{
+    display:flex;
+    justify-content:space-between;
+    padding:5px 0;
+}
+
+.total{
+    font-size:20px;
+    font-weight:bold;
+    margin:12px 0;
+}
+
+.status{
+    width:100%;
+    padding:11px;
+    border-radius:10px;
+    border:1px solid #ddd;
+    font-size:15px;
+    font-weight:bold;
+}
+.perfil-restaurante{display:flex;align-items:center;gap:16px}.foto-restaurante{width:90px;height:90px;border-radius:18px;object-fit:cover;background:#fff1e6;display:grid;place-items:center;font-size:40px;overflow:hidden;flex:none}.foto-restaurante img{width:100%;height:100%;object-fit:cover}.subir-foto{display:inline-block;margin-top:9px;background:#fff1e6;color:#b64b05;padding:8px 11px;border-radius:9px;font-size:13px;font-weight:bold;cursor:pointer}
+
+.estado-pedido{
+    display:inline-flex;
+    padding:7px 11px;
+    border-radius:999px;
+    background:#fff1e6;
+    color:#b64b05;
+    font-size:13px;
+    font-weight:bold;
+    margin:4px 0 12px;
+}
+
+.acciones-estado{display:grid;grid-template-columns:1fr;gap:8px;}
+.acciones-estado button{
+    width:100%;border:0;border-radius:11px;padding:12px;
+    background:#e85d04;color:white;font-size:15px;font-weight:bold;cursor:pointer;
+}
+.acciones-estado button.cancelar{background:#fff0f0;color:#a61b1b;border:1px solid #ffd2d2;}
+.bloqueado{padding:13px;border-radius:11px;background:#eef7f0;color:#236438;text-align:center;font-weight:bold;line-height:1.45;}
+
+.gestion-productos{background:white;border:1px solid #eee3d8;border-radius:20px;padding:22px;margin:0 0 28px;box-shadow:0 8px 24px rgba(73,44,24,.07)}
+.cabecera-seccion{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:17px;flex-wrap:wrap}
+.form-producto{display:grid;grid-template-columns:1.3fr 1fr .55fr;gap:10px;padding:15px;background:#fff8f1;border-radius:14px;margin-bottom:18px}
+.form-producto input{width:100%;border:1px solid #ded5ce;border-radius:10px;padding:12px;font-size:14px}
+.form-producto .descripcion{grid-column:span 2}.form-producto button{border:0;border-radius:10px;background:#e85d04;color:white;font-weight:bold;cursor:pointer}
+.productos{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}
+.producto{border:1px solid #ece3dc;border-radius:14px;padding:15px;display:flex;flex-direction:column;gap:8px}.producto.inactivo{opacity:.65;background:#f6f6f6}
+.producto h3{margin:0}.precio{font-size:20px;color:#d95405;font-weight:bold}.producto-acciones{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:auto}.producto-acciones button{border:0;border-radius:9px;padding:9px;cursor:pointer;font-weight:bold}.editar{background:#fff1e6;color:#b64b05}.disponibilidad{background:#edf7ef;color:#26723d}
+
+.actualizado{
+    text-align:center;
+    color:#777;
+    margin-top:25px;
+    font-size:13px;
+}
+
+.error{
+    background:#ffe5e5;
+    color:#a00000;
+    padding:15px;
+    border-radius:12px;
+    margin-bottom:20px;
+}
+
+.vacio{
+    background:white;
+    padding:40px;
+    text-align:center;
+    border-radius:15px;
+    color:#777;
+}
+
+@media(max-width:800px){
+    .stats{
+        grid-template-columns:repeat(2,1fr);
+    }
+}
+
+@media(max-width:500px){
+    .container{
+        padding:15px;
+    }
+
+    .stats{
+        grid-template-columns:1fr 1fr;
+    }
+
+    .orders{
+        grid-template-columns:1fr;
+    }
+    .form-producto{grid-template-columns:1fr}.form-producto .descripcion{grid-column:auto}.form-producto button{padding:12px}
+}
+.alerta-pedido{position:fixed;right:18px;top:90px;z-index:100;background:#fff4e8;border:2px solid #f47b20;border-radius:15px;padding:16px;box-shadow:0 12px 35px #5d2b0c33;animation:entrada .25s ease}.pago-pendiente{background:#fff4cf;color:#7a5000;padding:10px;border-radius:10px;margin:9px 0;font-weight:bold}.pago-confirmado{background:#e7f7eb;color:#176b37;padding:10px;border-radius:10px;margin:9px 0;font-weight:bold}@keyframes entrada{from{transform:translateY(-12px);opacity:0}}
+</style>
+<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><meta name="theme-color" content="#e85d04"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="COME SAYULA">
+</head>
+
+<body>
+
+<header>
+
+    <h1>🍽️ COME SAYULA</h1>
+
+    <div><button id="sonido" onclick="activarSonido()">🔔 Activar alertas</button> <button id="cerrarSesion" onclick="cerrarSesion()">
+        Cerrar sesión
+    </button></div>
+
+</header>
+
+<div class="container">
+
+    <div id="mensaje"></div>
+
+    <div class="restaurante-info perfil-restaurante">
+        <div id="fotoRestaurante" class="foto-restaurante">🍽️</div>
+        <div><h2 id="nombreRestaurante">Cargando restaurante...</h2>
+        <p id="direccionRestaurante"></p><p id="telefonoRestaurante"></p>
+        <label class="subir-foto">📷 Cambiar foto<input id="archivoRestaurante" type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="guardarFotoRestaurante(this)"></label>
+        <button class="subir-foto" style="border:0" onclick="abrirMapaRestaurante()">📍 Elegir ubicación en mapa</button>
+        <small id="estadoUbicacionRestaurante" style="display:block;margin-top:7px;color:#666"></small></div>
+
+    </div>
+
+    <div class="stats">
+
+        <div class="stat">
+            <strong id="nuevos">0</strong>
+            Nuevos
+        </div>
+
+        <div class="stat">
+            <strong id="preparando">0</strong>
+            Preparando
+        </div>
+
+        <div class="stat">
+            <strong id="listos">0</strong>
+            Listos
+        </div>
+
+        <div class="stat">
+            <strong id="entregados">0</strong>
+            Entregados
+        </div>
+
+    </div>
+
+    <section class="gestion-productos">
+        <div class="cabecera-seccion"><div><h2>🍔 Mi menú</h2><p style="color:#777;margin-top:5px">Crea productos y controla lo que está disponible.</p></div><strong id="totalProductos">0 productos</strong></div>
+        <form class="form-producto" onsubmit="guardarProducto(event)">
+            <input id="productoNombre" placeholder="Nombre del producto" maxlength="100" required>
+            <input id="productoPrecio" type="number" min="1" step="0.01" placeholder="Precio" required>
+            <label class="subir-foto" style="margin:0;text-align:center">📷 Foto del platillo<input id="productoImagen" type="file" accept="image/jpeg,image/png,image/webp" hidden></label>
+            <input id="productoDescripcion" class="descripcion" placeholder="Descripción del producto">
+            <button id="botonProducto" type="submit">＋ Guardar producto</button>
+        </form>
+        <div id="productos" class="productos"></div>
+    </section>
+
+    <h2 style="margin-bottom:15px;">
+        📦 Pedidos
+    </h2>
+
+    <div id="pedidos" class="orders"></div>
+
+    <div class="actualizado">
+        Actualización automática cada 10 segundos
+    </div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+
+let datosRestaurante = null;
+let productoEditandoId = null;
+let imagenProductoActual = '';
+let alertasActivas=false;
+let pedidosConocidos=new Set();
+
+function obtenerToken(){
+
+    return sessionStorage.getItem('cs_token');
+
+}
+
+function usuarioActual(){
+
+    try{
+
+        return JSON.parse(
+            sessionStorage.getItem('cs_user') || 'null'
+        );
+
+    }catch(e){
+
+        return null;
+
+    }
+
+}
+
+function comprobarAcceso(){
+
+    const token = obtenerToken();
+
+    const usuario = usuarioActual();
+
+    if(!token || !usuario){
+
+        alert('🔐 Debes iniciar sesión.');
+
+        location.href = '/home3.html';
+
+        return false;
+
+    }
+
+    if(usuario.role !== 'restaurant'){
+
+        alert(
+            '⛔ Esta sección es únicamente para restaurantes.'
+        );
+
+        location.href = '/home3.html';
+
+        return false;
+
+    }
+
+    return true;
+
+}
+
+async function cargarPanel(){
+
+    const token = obtenerToken();
+
+    try{
+
+        const respuesta = await fetch(
+            '/api/restaurant/me',
+            {
+                headers:{
+                    'Authorization':'Bearer ' + token
+                }
+            }
+        );
+
+        const datos = await respuesta.json();
+
+        if(!respuesta.ok){
+
+            throw new Error(
+                datos.error || 'No se pudo cargar el restaurante.'
+            );
+
+        }
+
+        detectarPedidosNuevos(datos.orders || []);
+        datosRestaurante = datos;
+
+        mostrarRestaurante(datos);
+
+        mostrarProductos(datos.products || []);
+
+        mostrarPedidos(datos.orders || []);
+
+    }catch(error){
+
+        console.error(error);
+
+        document.getElementById('mensaje').innerHTML = `
+            <div class="error">
+                ❌ ${escapar(error.message)}
+            </div>
+        `;
+
+    }
+
+}
+
+function mostrarRestaurante(datos){
+
+    document.getElementById(
+        'nombreRestaurante'
+    ).textContent =
+        '🍽️ ' + (datos.name || 'Restaurante');
+
+    document.getElementById(
+        'direccionRestaurante'
+    ).textContent =
+        '📍 ' + (datos.address || 'Sin dirección');
+
+    document.getElementById(
+        'telefonoRestaurante'
+    ).textContent =
+        '📞 ' + (datos.phone || 'Sin teléfono');
+
+    document.getElementById('fotoRestaurante').innerHTML=datos.image
+        ? `<img src="${escapar(datos.image)}" alt="Foto del restaurante">`
+        : '🍽️';
+    document.getElementById('estadoUbicacionRestaurante').textContent=datos.latitude!==null&&datos.latitude!==undefined&&datos.longitude!==null&&datos.longitude!==undefined&&Number.isFinite(Number(datos.latitude))&&Number.isFinite(Number(datos.longitude))
+        ? '✅ Ubicación configurada para calcular envíos'
+        : '⚠️ Configura la ubicación para calcular el costo de envío';
+
+}
+
+function mostrarProductos(productos){
+    const contenedor=document.getElementById('productos');
+    document.getElementById('totalProductos').textContent=productos.length+' producto'+(productos.length===1?'':'s');
+    if(!productos.length){
+        contenedor.innerHTML='<div class="vacio">🍽️ Tu menú está vacío. Agrega tu primer producto arriba.</div>';
+        return;
+    }
+    contenedor.innerHTML=productos.map(producto=>`
+        <article class="producto ${producto.available?'':'inactivo'}">
+            <div style="font-size:34px">${producto.image?`<img src="${escapar(producto.image)}" alt="" style="width:58px;height:58px;object-fit:cover;border-radius:12px" onerror="this.replaceWith('🍽️')">`:'🍽️'}</div>
+            <h3>${escapar(producto.name)}</h3>
+            <p style="color:#666">${escapar(producto.description||'Sin descripción')}</p>
+            <div class="precio">$${Number(producto.price).toFixed(2)}</div>
+            <small>${producto.available?'🟢 Disponible':'⚪ No disponible'}</small>
+            <div class="producto-acciones">
+                <button class="editar" onclick="editarProducto(${producto.id})">✏️ Editar</button>
+                <button class="disponibilidad" onclick="cambiarDisponibilidad(${producto.id},${producto.available?0:1})">${producto.available?'Ocultar':'Activar'}</button>
+            </div>
+        </article>`).join('');
+}
+
+async function guardarProducto(evento){
+    evento.preventDefault();
+    const boton=document.getElementById('botonProducto');
+    boton.disabled=true;boton.textContent='Guardando…';
+    try{
+        const archivo=productoImagen.files[0];
+        const image=archivo?await subirImagen(archivo):imagenProductoActual;
+        await solicitudProducto('/api/restaurant/products'+(productoEditandoId?'/'+productoEditandoId:''),productoEditandoId?'PUT':'POST',{
+            name:productoNombre.value,description:productoDescripcion.value,
+            price:productoPrecio.value,image
+        });
+        evento.target.reset();
+        productoEditandoId=null;imagenProductoActual='';
+        await cargarPanel();
+    }catch(error){alert('❌ '+error.message);}
+    finally{boton.disabled=false;boton.textContent='＋ Guardar producto';}
+}
+
+async function editarProducto(id){
+    const producto=(datosRestaurante?.products||[]).find(item=>item.id===id);
+    if(!producto)return;
+    productoEditandoId=id;imagenProductoActual=producto.image||'';
+    productoNombre.value=producto.name;productoPrecio.value=producto.price;
+    productoDescripcion.value=producto.description||'';
+    document.getElementById('botonProducto').textContent='💾 Guardar cambios';
+    document.querySelector('.form-producto').scrollIntoView({behavior:'smooth',block:'center'});
+    productoNombre.focus();
+}
+
+async function subirImagen(archivo){
+    if(archivo.size>4*1024*1024)throw new Error('La foto debe pesar menos de 4 MB.');
+    const dataUrl=await new Promise((resolve,reject)=>{const lector=new FileReader();lector.onload=()=>resolve(lector.result);lector.onerror=()=>reject(new Error('No se pudo leer la foto.'));lector.readAsDataURL(archivo);});
+    const respuesta=await fetch('/api/restaurant/uploads',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+obtenerToken()},body:JSON.stringify({dataUrl})});
+    const datos=await respuesta.json();if(!respuesta.ok)throw new Error(datos.error||'No se pudo subir la foto.');return datos.url;
+}
+
+async function guardarFotoRestaurante(input){
+    if(!input.files[0])return;
+    try{
+        const image=await subirImagen(input.files[0]);
+        await solicitudProducto('/api/restaurant/profile','PUT',{image});
+        await cargarPanel();
+    }catch(error){alert('❌ '+error.message);}
+    finally{input.value='';}
+}
+
+function guardarUbicacionRestaurante(){
+    const estado=document.getElementById('estadoUbicacionRestaurante');
+    if(!navigator.geolocation){estado.textContent='Este dispositivo no permite obtener ubicación.';return;}
+    estado.textContent='Obteniendo ubicación…';
+    navigator.geolocation.getCurrentPosition(async posicion=>{
+        try{
+            await solicitudProducto('/api/restaurant/location','PUT',{latitude:posicion.coords.latitude,longitude:posicion.coords.longitude});
+            estado.textContent='✅ Ubicación guardada correctamente';await cargarPanel();
+        }catch(error){estado.textContent='❌ '+error.message;}
+    },()=>{estado.textContent='⚠️ Permite el acceso a la ubicación.';},{enableHighAccuracy:true,timeout:15000});
+}
+
+function abrirMapaRestaurante(){
+    const tienePunto=datosRestaurante?.latitude!=null&&datosRestaurante?.longitude!=null;
+    let punto={lat:tienePunto?Number(datosRestaurante.latitude):19.8826,lng:tienePunto?Number(datosRestaurante.longitude):-103.5998};
+    const modal=document.createElement('div');modal.id='modalUbicacionRestaurante';modal.style.cssText='position:fixed;inset:0;background:#0009;z-index:1000;padding:18px;display:grid;place-items:center';
+    modal.innerHTML=`<div style="width:min(680px,100%);background:white;padding:20px;border-radius:20px"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><div><h2>Ubicación del restaurante</h2><p style="color:#666;margin-top:5px">Toca el mapa para colocar el marcador exactamente.</p></div><button onclick="document.getElementById('modalUbicacionRestaurante').remove()" style="border:0;border-radius:50%;width:38px;height:38px">✕</button></div><div id="mapaRestaurante" style="height:380px;border-radius:14px;margin:15px 0"></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:9px"><button onclick="ubicarRestauranteConGps()" style="padding:12px;border:0;border-radius:10px;background:#eef7f0;color:#236438;font-weight:bold">Usar GPS</button><button id="guardarPuntoRestaurante" style="padding:12px;border:0;border-radius:10px;background:#e85d04;color:white;font-weight:bold">Guardar punto</button></div></div>`;
+    document.body.appendChild(modal);
+    const mapa=L.map('mapaRestaurante').setView([punto.lat,punto.lng],16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(mapa);
+    const marcador=L.marker([punto.lat,punto.lng],{draggable:true}).addTo(mapa);
+    const cambiar=nuevo=>{punto={lat:nuevo.lat,lng:nuevo.lng};marcador.setLatLng(nuevo);};
+    mapa.on('click',evento=>cambiar(evento.latlng));marcador.on('dragend',evento=>cambiar(evento.target.getLatLng()));
+    window.__mapaRestaurante={mapa,marcador,cambiar};
+    document.getElementById('guardarPuntoRestaurante').onclick=async()=>{try{await solicitudProducto('/api/restaurant/location','PUT',{latitude:punto.lat,longitude:punto.lng});modal.remove();await cargarPanel();}catch(error){alert('❌ '+error.message);}};
+    setTimeout(()=>mapa.invalidateSize(),50);
+}
+
+function ubicarRestauranteConGps(){
+    if(!navigator.geolocation)return;
+    navigator.geolocation.getCurrentPosition(posicion=>{const punto={lat:posicion.coords.latitude,lng:posicion.coords.longitude};window.__mapaRestaurante?.cambiar(punto);window.__mapaRestaurante?.mapa.setView([punto.lat,punto.lng],17);},()=>alert('No fue posible obtener la ubicación.'));
+}
+
+async function cambiarDisponibilidad(id,available){
+    try{await solicitudProducto('/api/restaurant/products/'+id,'PATCH',{available});await cargarPanel();}
+    catch(error){alert('❌ '+error.message);}
+}
+
+async function solicitudProducto(url,method,body){
+    const respuesta=await fetch(url,{method,headers:{'Content-Type':'application/json','Authorization':'Bearer '+obtenerToken()},body:JSON.stringify(body)});
+    const datos=await respuesta.json();if(!respuesta.ok)throw new Error(datos.error||'No se pudo guardar el producto.');return datos;
+}
+
+function mostrarPedidos(pedidos){
+
+    const contenedor =
+        document.getElementById('pedidos');
+
+    const nuevos =
+        pedidos.filter(p => p.status === 'received').length;
+
+    const preparando =
+        pedidos.filter(p => p.status === 'preparing').length;
+
+    const listos =
+        pedidos.filter(p => p.status === 'ready').length;
+
+    const entregados =
+        pedidos.filter(p => p.status === 'delivered').length;
+
+    document.getElementById('nuevos').textContent = nuevos;
+
+    document.getElementById('preparando').textContent = preparando;
+
+    document.getElementById('listos').textContent = listos;
+
+    document.getElementById('entregados').textContent = entregados;
+
+    if(!pedidos.length){
+
+        contenedor.innerHTML = `
+            <div class="vacio">
+                <h3>📭 No hay pedidos todavía</h3>
+                <p style="margin-top:8px;">
+                    Los nuevos pedidos aparecerán aquí.
+                </p>
+            </div>
+        `;
+
+        return;
+
+    }
+
+    contenedor.innerHTML = pedidos.map(pedido => {
+
+        const items = pedido.items || [];
+
+        const estado = pedido.status || 'received';
+
+        const nombresEstado={
+            received:'🟠 Recibido',preparing:'👨‍🍳 Preparando',ready:'🟢 Listo para recoger',
+            delivering:'🛵 Con el repartidor',delivered:'✅ Entregado',cancelled:'❌ Cancelado'
+        };
+
+        let controlEstado='';
+        if(estado==='received'){
+            controlEstado=`<div class="acciones-estado"><button onclick="cambiarEstado(${pedido.id},'preparing')">👨‍🍳 Comenzar preparación</button><button class="cancelar" onclick="cambiarEstado(${pedido.id},'cancelled')">Cancelar pedido</button></div>`;
+        }else if(estado==='preparing'){
+            controlEstado=`<div class="acciones-estado"><button onclick="cambiarEstado(${pedido.id},'ready')">✅ Pedido listo para recoger</button><button class="cancelar" onclick="cambiarEstado(${pedido.id},'cancelled')">Cancelar pedido</button></div>`;
+        }else if(estado==='ready'&&pedido.delivery_assigned){
+            controlEstado='<div class="bloqueado">🔒 Repartidor asignado<br><small>Esperando que confirme la recogida</small></div>';
+        }else if(estado==='ready'){
+            controlEstado='<div class="bloqueado">⏳ Esperando que un repartidor acepte el pedido</div>';
+        }else if(estado==='delivering'){
+            controlEstado='<div class="bloqueado">🔒 Pedido entregado al repartidor<br><small>Ya no puede modificarse</small></div>';
+        }else if(estado==='delivered'){
+            controlEstado='<div class="bloqueado">✅ Pedido entregado y finalizado</div>';
+        }else{
+            controlEstado='<div class="bloqueado">Pedido cancelado</div>';
+        }
+
+        const pago=pedido.payment_method==='Transferencia'
+            ? (pedido.payment_status==='confirmed'?'<div class="pago-confirmado">✅ Transferencia confirmada</div>':`<div class="pago-pendiente">⏳ Transferencia: pago por confirmar</div><button style="width:100%;margin-bottom:10px;padding:11px;border:0;border-radius:10px;background:#e85d04;color:white;font-weight:bold" onclick="confirmarTransferencia(${pedido.id})">Confirmar que recibí la transferencia</button>`)
+            : `<div class="pago-pendiente">💵 Cobro al entregar · ${escapar(pedido.payment_method||'Efectivo')}</div>`;
+
+        return `
+
+        <div class="order ${
+            estado === 'received' ? 'new' : ''
+        }">
+
+            <h3>
+                📦 Pedido #${pedido.id}
+            </h3>
+
+            <div class="estado-pedido">${nombresEstado[estado]||estado}</div>
+
+            <div class="order-info">
+
+                👤 <strong>
+                    ${escapar(pedido.customer_name || 'Cliente')}
+                </strong>
+
+                <br>
+
+                📞 ${
+                    escapar(
+                        pedido.customer_phone ||
+                        'Sin teléfono'
+                    )
+                }
+
+                <br>
+
+                📍 ${
+                    escapar(
+                        pedido.address ||
+                        'Sin dirección'
+                    )
+                }
+
+                <br>
+
+                💳 ${
+                    escapar(
+                        pedido.payment_method ||
+                        'No especificado'
+                    )
+                }
+
+                <br>
+
+                🕐 ${
+                    formatearFecha(
+                        pedido.created_at
+                    )
+                }
+
+            </div>
+
+            <div class="items">
+
+                ${
+                    items.map(item => `
+
+                        <div class="item">
+
+                            <span>
+                                ${item.quantity} ×
+                                ${escapar(item.product_name)}
+                            </span>
+
+                            <strong>
+                                $${(
+                                    Number(item.unit_price) *
+                                    Number(item.quantity)
+                                ).toFixed(2)}
+                            </strong>
+
+                        </div>
+
+                    `).join('')
+                }
+
+            </div>
+
+            <div class="total">
+                Total:
+                $${Number(pedido.total).toFixed(2)}
+            </div>
+
+            ${pago}
+
+            ${controlEstado}
+
+        </div>
+
+        `;
+
+    }).join('');
+
+}
+
+async function confirmarTransferencia(id){
+    if(!confirm('Confirma únicamente después de comprobar el depósito en tu cuenta.'))return;
+    try{await solicitudProducto('/api/restaurant/orders/'+id+'/payment','PATCH',{});await cargarPanel();}
+    catch(error){alert('❌ '+error.message);}
+}
+
+function activarSonido(){alertasActivas=true;document.getElementById('sonido').textContent='🔔 Alertas activas';tonoAlerta();}
+function tonoAlerta(){if(!alertasActivas)return;try{const contexto=new (window.AudioContext||window.webkitAudioContext)(),oscilador=contexto.createOscillator(),ganancia=contexto.createGain();oscilador.frequency.value=880;ganancia.gain.setValueAtTime(.12,contexto.currentTime);ganancia.gain.exponentialRampToValueAtTime(.001,contexto.currentTime+.55);oscilador.connect(ganancia);ganancia.connect(contexto.destination);oscilador.start();oscilador.stop(contexto.currentTime+.55);}catch(e){}}
+function detectarPedidosNuevos(pedidos){
+    const actuales=new Set(pedidos.map(p=>p.id));
+    if(pedidosConocidos.size){const nuevos=pedidos.filter(p=>p.status==='received'&&!pedidosConocidos.has(p.id));if(nuevos.length){tonoAlerta();const aviso=document.createElement('div');aviso.className='alerta-pedido';aviso.innerHTML=`<strong>🔔 ${nuevos.length===1?'Nuevo pedido #'+nuevos[0].id:nuevos.length+' pedidos nuevos'}</strong><br><small>Revisa los detalles para comenzar.</small>`;document.body.appendChild(aviso);setTimeout(()=>aviso.remove(),8000);}}
+    pedidosConocidos=actuales;
+}
+
+async function cambiarEstado(id, estado){
+
+    const token = obtenerToken();
+
+    try{
+
+        const respuesta = await fetch(
+            '/api/restaurant/orders/' + id,
+            {
+                method:'PATCH',
+
+                headers:{
+                    'Content-Type':'application/json',
+                    'Authorization':'Bearer ' + token
+                },
+
+                body:JSON.stringify({
+                    status:estado
+                })
+            }
+        );
+
+        const datos = await respuesta.json();
+
+        if(!respuesta.ok){
+
+            throw new Error(
+                datos.error ||
+                'No se pudo actualizar el pedido.'
+            );
+
+        }
+
+        await cargarPanel();
+
+    }catch(error){
+
+        console.error(error);
+
+        alert(
+            '❌ ' + error.message
+        );
+
+        await cargarPanel();
+
+    }
+
+}
+
+function cerrarSesion(){
+
+    sessionStorage.removeItem('cs_token');
+
+    sessionStorage.removeItem('cs_user');
+
+    location.href = '/home3.html';
+
+}
+
+function formatearFecha(fecha){
+
+    if(!fecha){
+        return 'Sin fecha';
+    }
+
+    try{
+
+        return new Date(fecha).toLocaleString(
+            'es-MX'
+        );
+
+    }catch(e){
+
+        return fecha;
+
+    }
+
+}
+
+function escapar(valor){
+
+    return String(valor ?? '')
+        .replace(/&/g,'&amp;')
+        .replace(/</g,'&lt;')
+        .replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;')
+        .replace(/'/g,'&#039;');
+
+}
+
+if(comprobarAcceso()){
+
+    cargarPanel();
+
+    setInterval(
+        cargarPanel,
+        10000
+    );
+
+}
+
+</script>
+
+<script src="/pwa-install.js" defer></script></body>
+</html>

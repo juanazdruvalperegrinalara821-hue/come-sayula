@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Ingresar - COME SAYULA</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Arial,sans-serif;color:#30241e;background:linear-gradient(145deg,#fff8f1,#f4f6f8);display:grid;place-items:center;padding:22px}
+.pagina{width:min(980px,100%);display:grid;grid-template-columns:1fr 1.12fr;background:white;border-radius:26px;overflow:hidden;box-shadow:0 24px 65px #63331124;border:1px solid #f1e1d4}
+.marca{background:linear-gradient(145deg,#f47b20,#d94e00);color:white;padding:48px;display:flex;flex-direction:column;justify-content:center}.marca .logo{font-size:58px}.marca h1{font-size:36px;margin:14px 0 8px}.marca p{line-height:1.65;opacity:.94}.ventaja{margin-top:28px;display:grid;gap:13px}.ventaja div{background:#ffffff18;border:1px solid #ffffff30;padding:12px;border-radius:12px}
+.formulario{padding:38px}.volver{color:#bc4b08;text-decoration:none;font-weight:bold}.tabs{display:grid;grid-template-columns:1fr 1fr;background:#f6f3f1;padding:5px;border-radius:13px;margin:24px 0 18px}.tab{border:0;background:transparent;padding:11px;border-radius:10px;font-weight:bold;cursor:pointer;color:#6c625d}.tab.activo{background:white;color:#d95405;box-shadow:0 2px 8px #00000012}
+.roles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:13px 0 19px}.rol{border:1px solid #e8ddd5;background:white;border-radius:12px;padding:11px 7px;text-align:center;cursor:pointer;color:#5f554f}.rol span{display:block;font-size:24px;margin-bottom:4px}.rol.activo{border-color:#e85d04;background:#fff5ec;color:#bd4b05;font-weight:bold}
+label{display:block;font-size:13px;font-weight:bold;margin:13px 0 6px;color:#554b45}input{width:100%;padding:13px 14px;border:1px solid #ded7d2;border-radius:11px;font-size:15px;outline:none}input:focus{border-color:#e85d04;box-shadow:0 0 0 3px #e85d0418}
+.principal{width:100%;border:0;border-radius:12px;padding:14px;margin-top:20px;background:linear-gradient(135deg,#f47b20,#e85d04);color:white;font-size:16px;font-weight:bold;cursor:pointer;box-shadow:0 7px 18px #e85d0438}.mensaje{min-height:22px;margin-top:13px;font-size:14px}.error{color:#b42318}.exito{color:#15803d}.oculto{display:none}.separador{display:flex;align-items:center;gap:10px;color:#999;font-size:12px;margin:20px 0}.separador:before,.separador:after{content:'';height:1px;background:#e8e3df;flex:1}#google{display:flex;justify-content:center}
+@media(max-width:760px){.pagina{grid-template-columns:1fr}.marca{padding:27px}.marca .logo,.ventaja{display:none}.marca h1{font-size:28px;margin:0}.formulario{padding:25px}.roles{grid-template-columns:1fr}.rol span{display:inline;margin-right:7px;font-size:18px}}
+</style>
+<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><meta name="theme-color" content="#e85d04"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="COME SAYULA">
+</head>
+<body>
+<main class="pagina">
+    <section class="marca"><div class="logo">🍽️</div><h1>COME SAYULA</h1><p>Comida local, restaurantes y entregas en un solo lugar.</p><div class="ventaja"><div>🛍️ Pide como cliente</div><div>🍳 Administra tu restaurante</div><div>🛵 Entrega como repartidor</div></div></section>
+    <section class="formulario">
+        <a class="volver" href="/home3.html">← Volver al inicio</a>
+        <div class="tabs"><button id="tabLogin" class="tab activo" onclick="cambiarModo('login')">Iniciar sesión</button><button id="tabRegistro" class="tab" onclick="cambiarModo('register')">Crear cuenta</button></div>
+        <h2 id="titulo">Bienvenido de nuevo</h2>
+        <p id="subtitulo">Selecciona cómo deseas ingresar.</p>
+        <div class="roles">
+            <button class="rol activo" data-role="customer" onclick="seleccionarRol('customer')"><span>👤</span>Cliente</button>
+            <button class="rol" data-role="restaurant" onclick="seleccionarRol('restaurant')"><span>🍳</span>Restaurante</button>
+            <button class="rol" data-role="delivery" onclick="seleccionarRol('delivery')"><span>🛵</span>Repartidor</button>
+            <button class="rol" data-role="admin" onclick="seleccionarRol('admin')"><span>🛡️</span>Administrador</button>
+        </div>
+        <form id="formulario" onsubmit="enviar(event)">
+            <div id="campoNombre" class="oculto"><label id="etiquetaNombre">Nombre completo</label><input id="nombre" autocomplete="name"></div>
+            <div id="campoTelefono" class="oculto"><label>Teléfono</label><input id="telefono" type="tel" autocomplete="tel"></div>
+            <label>Correo electrónico</label><input id="correo" type="email" autocomplete="email" required>
+            <label>Contraseña</label><input id="password" type="password" minlength="8" autocomplete="current-password" required><small style="display:block;color:#777;margin-top:5px">Mínimo 8 caracteres. No reutilices una contraseña de otra cuenta.</small>
+            <label id="campoTerminos" style="font-weight:normal;display:flex;gap:9px;align-items:flex-start"><input id="terminos" type="checkbox" style="width:auto;margin-top:3px"> <span>Acepto los <a href="/legal.html" target="_blank">términos, privacidad y uso de ubicación</a> al crear una cuenta nueva.</span></label>
+            <button id="boton" class="principal" type="submit">Iniciar sesión como cliente</button>
+        </form>
+        <button id="recuperar" type="button" onclick="recuperarAcceso()" style="width:100%;border:0;background:transparent;color:#b64b05;padding:12px;cursor:pointer">¿Olvidaste tu contraseña?</button>
+        <div id="mensaje" class="mensaje"></div>
+        <div id="accesoGoogle"><div class="separador">o continúa como cliente</div><div id="google"></div></div>
+    </section>
+</main>
+<script>
+const CLIENT_ID='846821366103-clbjraiah8qvdb5gia3op8h8rsu4c8ba.apps.googleusercontent.com';
+let modo='login',rol='customer';
+const nombres={customer:'cliente',restaurant:'restaurante',delivery:'repartidor',admin:'administrador'};
+
+function cambiarModo(nuevo){
+    modo=nuevo;
+    document.getElementById('tabLogin').classList.toggle('activo',modo==='login');
+    document.getElementById('tabRegistro').classList.toggle('activo',modo==='register');
+    document.getElementById('campoNombre').classList.toggle('oculto',modo!=='register');
+    document.getElementById('campoTelefono').classList.toggle('oculto',modo!=='register');
+    document.getElementById('nombre').required=modo==='register';
+    document.getElementById('password').autocomplete=modo==='login'?'current-password':'new-password';
+    document.getElementById('titulo').textContent=modo==='login'?'Bienvenido de nuevo':'Crea tu cuenta';
+    document.getElementById('subtitulo').textContent=modo==='login'?'Selecciona cómo deseas ingresar.':'El registro público es únicamente para clientes.';
+    document.querySelectorAll('.rol').forEach(elemento=>elemento.classList.toggle('oculto',modo==='register'&&elemento.dataset.role!=='customer'));
+    if(modo==='register')seleccionarRol('customer');
+    document.getElementById('recuperar').classList.toggle('oculto',modo!=='login');
+    actualizarTextos();
+}
+
+function seleccionarRol(nuevo){
+    rol=nuevo;
+    document.querySelectorAll('.rol').forEach(elemento=>elemento.classList.toggle('activo',elemento.dataset.role===rol));
+    actualizarTextos();
+}
+
+function actualizarTextos(){
+    document.getElementById('boton').textContent=(modo==='login'?'Iniciar sesión como ':'Crear cuenta de ')+nombres[rol];
+    document.getElementById('etiquetaNombre').textContent=rol==='restaurant'?'Nombre del restaurante':'Nombre completo';
+    document.getElementById('accesoGoogle').classList.toggle('oculto',modo!=='login'||rol!=='customer');
+    mostrarMensaje('');
+}
+
+async function enviar(evento){
+    evento.preventDefault();
+    const boton=document.getElementById('boton');
+    boton.disabled=true;boton.textContent='Procesando…';mostrarMensaje('');
+    const payload={email:correo.value.trim(),password:password.value,role:rol};
+    if(modo==='register'){payload.name=nombre.value.trim();payload.phone=telefono.value.trim();payload.termsAccepted=terminos.checked;}
+    try{
+        const respuesta=await fetch('/api/auth/'+(modo==='login'?'login':'register'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        const datos=await respuesta.json();
+        if(!respuesta.ok)throw new Error(datos.error||'No fue posible continuar.');
+        guardarSesion(datos);mostrarMensaje('Acceso correcto. Redirigiendo…','exito');redirigir(datos.user.role);
+    }catch(error){
+        boton.disabled=false;
+        boton.textContent=(modo==='login'?'Iniciar sesión como ':'Crear cuenta de ')+nombres[rol];
+        mostrarMensaje(error.message,'error');
+    }
+}
+
+function guardarSesion(datos){sessionStorage.setItem('cs_token',datos.token);sessionStorage.setItem('cs_user',JSON.stringify(datos.user));}
+function redirigir(tipo){location.href=tipo==='restaurant'?'/restaurant.html':tipo==='delivery'?'/delivery.html':tipo==='admin'?'/admin.html':'/home3.html';}
+function mostrarMensaje(texto,tipo=''){const elemento=document.getElementById('mensaje');elemento.textContent=texto;elemento.className='mensaje '+tipo;}
+
+function iniciarGoogle(){
+    const esLocal=['localhost','127.0.0.1','::1'].includes(location.hostname);
+    if(location.protocol!=='https:'&&!esLocal){
+        document.getElementById('google').innerHTML='<div style="background:#fff3cd;color:#725000;padding:12px;border-radius:11px;text-align:left;line-height:1.45"><strong>Google requiere una conexión segura</strong><br>En este teléfono entra con correo y contraseña. El acceso con Google se habilitará al publicar COME SAYULA con HTTPS.</div>';
+        return;
+    }
+    if(!window.google?.accounts?.id)return setTimeout(iniciarGoogle,300);
+    google.accounts.id.initialize({client_id:CLIENT_ID,callback:accesoGoogle});
+    google.accounts.id.renderButton(document.getElementById('google'),{theme:'outline',size:'large',text:'continue_with',shape:'pill',width:300});
+}
+async function accesoGoogle(respuestaGoogle){
+    try{
+        const respuesta=await fetch('/api/auth/google',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:respuestaGoogle.credential,termsAccepted:terminos.checked})});
+        const datos=await respuesta.json();if(!respuesta.ok)throw new Error(datos.error||'No fue posible ingresar con Google.');
+        guardarSesion(datos);redirigir(datos.user.role);
+    }catch(error){mostrarMensaje(error.message,'error');}
+}
+async function recuperarAcceso(){
+    const email=correo.value.trim()||prompt('Escribe el correo de tu cuenta:');if(!email)return;
+    try{const respuesta=await fetch('/api/auth/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});const datos=await respuesta.json();mostrarMensaje(datos.message||'Revisa tu correo.','exito');}
+    catch(error){mostrarMensaje('No fue posible iniciar la recuperación.','error');}
+}
+cambiarModo('register');
+window.addEventListener('load',iniciarGoogle);
+</script>
+<script src="/pwa-install.js" defer></script></body>
+</html>

@@ -1,0 +1,2038 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>COME SAYULA 3.0</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<style>
+*{
+    box-sizing:border-box;
+    margin:0;
+    padding:0;
+    font-family:Arial,Helvetica,sans-serif;
+}
+
+body{
+    background:#f7f7f7;
+    color:#222;
+}
+
+header{
+    background:white;
+    border-bottom:1px solid #e5e5e5;
+    position:sticky;
+    top:0;
+    z-index:100;
+}
+
+.header{
+    max-width:1200px;
+    margin:auto;
+    padding:15px 20px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:20px;
+}
+
+.logo{
+    font-size:25px;
+    font-weight:900;
+    color:#e85d04;
+    white-space:nowrap;
+}
+
+.location{
+    font-size:14px;
+    color:#555;
+    flex:1;
+}
+
+.location b{
+    color:#222;
+}
+
+.header-buttons{
+    display:flex;
+    gap:10px;
+}
+
+.icon-btn{
+    border:none;
+    background:#f1f1f1;
+    padding:11px 14px;
+    border-radius:12px;
+    cursor:pointer;
+    font-size:16px;
+}
+
+.icon-btn:hover{
+    background:#e8e8e8;
+}
+
+main{
+    max-width:1200px;
+    margin:auto;
+    padding:25px 20px 100px;
+}
+
+.hero{
+    background:linear-gradient(135deg,#e85d04,#f48c06);
+    border-radius:25px;
+    padding:45px;
+    color:white;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    min-height:280px;
+    overflow:hidden;
+}
+
+.hero-text{
+    max-width:600px;
+}
+
+.hero h1{
+    font-size:45px;
+    margin-bottom:15px;
+}
+
+.hero p{
+    font-size:19px;
+    margin-bottom:25px;
+    line-height:1.5;
+}
+
+.hero-button{
+    border:none;
+    background:white;
+    color:#e85d04;
+    padding:14px 22px;
+    border-radius:14px;
+    font-weight:bold;
+    cursor:pointer;
+    font-size:15px;
+}
+
+.hero-food{
+    font-size:120px;
+}
+
+.search{
+    margin:25px 0;
+    position:relative;
+}
+
+.search input{
+    width:100%;
+    padding:18px 20px 18px 50px;
+    border:none;
+    border-radius:16px;
+    background:white;
+    box-shadow:0 4px 15px rgba(0,0,0,.06);
+    font-size:16px;
+    outline:none;
+}
+
+.search span{
+    position:absolute;
+    left:18px;
+    top:16px;
+    font-size:21px;
+}
+
+.section{
+    margin-top:35px;
+}
+
+.section-title{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:18px;
+}
+
+.section-title h2{
+    font-size:24px;
+}
+
+.section-title button{
+    border:none;
+    background:none;
+    color:#e85d04;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+.categories{
+    display:flex;
+    gap:15px;
+    overflow-x:auto;
+    padding-bottom:8px;
+}
+
+.category{
+    min-width:105px;
+    background:white;
+    border-radius:18px;
+    padding:17px 10px;
+    text-align:center;
+    cursor:pointer;
+    box-shadow:0 4px 12px rgba(0,0,0,.05);
+    transition:.2s;
+}
+
+.category:hover{
+    transform:translateY(-3px);
+}
+
+.category-icon{
+    font-size:35px;
+    margin-bottom:8px;
+}
+
+.category p{
+    font-weight:bold;
+    font-size:13px;
+}
+
+.promotion{
+    background:#222;
+    color:white;
+    border-radius:22px;
+    padding:28px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:20px;
+}
+
+.promotion h2{
+    color:#ffb703;
+    margin-bottom:8px;
+}
+
+.promotion p{
+    color:#ddd;
+    line-height:1.5;
+}
+
+.promo-code{
+    background:#ffb703;
+    color:#222;
+    padding:14px 20px;
+    border-radius:12px;
+    font-weight:bold;
+    white-space:nowrap;
+}
+
+.restaurants{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:20px;
+}
+
+.restaurant{
+    background:white;
+    border-radius:20px;
+    overflow:hidden;
+    box-shadow:0 5px 15px rgba(0,0,0,.07);
+    transition:.2s;
+}
+
+.restaurant:hover{
+    transform:translateY(-4px);
+}
+
+.restaurant-image{
+    height:160px;
+    background:linear-gradient(135deg,#ffd166,#f8961e);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:70px;
+}
+
+.restaurant-info{
+    padding:18px;
+}
+
+.restaurant-info h3{
+    margin-bottom:7px;
+}
+
+.restaurant-info p{
+    color:#666;
+    font-size:14px;
+    margin-bottom:12px;
+}
+
+.rating{
+    color:#f48c06;
+    font-weight:bold;
+}
+
+.restaurant-button{
+    width:100%;
+    margin-top:14px;
+    border:none;
+    background:#e85d04;
+    color:white;
+    padding:12px;
+    border-radius:12px;
+    cursor:pointer;
+    font-weight:bold;
+}
+
+.restaurant-button:hover{
+    background:#d94f00;
+}
+
+.empty{
+    display:none;
+    background:white;
+    padding:30px;
+    border-radius:18px;
+    text-align:center;
+    color:#777;
+}
+
+.bottom-nav{
+    position:fixed;
+    bottom:0;
+    left:0;
+    right:0;
+    background:white;
+    border-top:1px solid #ddd;
+    display:flex;
+    justify-content:center;
+    gap:70px;
+    padding:12px;
+    z-index:200;
+}
+
+.bottom-nav button{
+    border:none;
+    background:none;
+    cursor:pointer;
+    font-size:13px;
+    color:#555;
+}
+
+.bottom-nav span{
+    display:block;
+    font-size:21px;
+    margin-bottom:3px;
+}
+
+@media(max-width:800px){
+
+    .header{
+        flex-wrap:wrap;
+    }
+
+    .location{
+        order:3;
+        width:100%;
+        flex:none;
+    }
+
+    .hero{
+        padding:30px;
+        min-height:250px;
+    }
+
+    .hero h1{
+        font-size:32px;
+    }
+
+    .hero p{
+        font-size:16px;
+    }
+
+    .hero-food{
+        font-size:80px;
+    }
+
+    .restaurants{
+        grid-template-columns:repeat(2,1fr);
+    }
+
+    .bottom-nav{
+        gap:35px;
+    }
+}
+
+@media(max-width:550px){
+
+    .logo{
+        font-size:21px;
+    }
+
+    .header-buttons{
+        gap:5px;
+    }
+
+    .icon-btn{
+        padding:9px;
+    }
+
+    .hero{
+        padding:25px;
+    }
+
+    .hero-food{
+        display:none;
+    }
+
+    .hero h1{
+        font-size:29px;
+    }
+
+    .restaurants{
+        grid-template-columns:1fr;
+    }
+
+    .promotion{
+        flex-direction:column;
+        align-items:flex-start;
+    }
+
+    .bottom-nav{
+        justify-content:space-around;
+        gap:0;
+    }
+}
+</style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><meta name="theme-color" content="#e85d04"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="COME SAYULA">
+</head>
+
+<body>
+
+<header>
+
+<div class="header">
+
+<div class="logo">
+🍴 COME SAYULA
+</div>
+
+<div class="location">
+📍 Entrega en <b>Sayula, Jalisco</b>
+</div>
+
+<div class="header-buttons">
+
+<button class="icon-btn" onclick="buscarEnfoque()">
+🔎
+</button>
+
+<button class="icon-btn" onclick="cuenta()">
+👤
+</button>
+
+<button class="icon-btn" onclick="carrito()">
+🛒
+</button>
+
+</div>
+
+</div>
+
+</header>
+
+<main>
+
+<section class="hero">
+
+<div class="hero-text">
+
+<h1>
+Todo Sayula en un solo lugar
+</h1>
+
+<p>
+Pide comida de tus restaurantes favoritos
+y recíbela donde estés.
+</p>
+
+<button class="hero-button" onclick="irRestaurantes()">
+Ver restaurantes
+</button>
+
+</div>
+
+<div class="hero-food">
+🍔🍕
+</div>
+
+</section>
+
+<div class="search">
+
+<span>🔎</span>
+
+<input
+type="text"
+id="searchInput"
+placeholder="¿Qué quieres comer hoy?"
+oninput="buscar(this.value)"
+>
+
+</div>
+
+<section class="section">
+
+<div class="section-title">
+<h2>¿Qué se te antoja?</h2>
+</div>
+
+<div class="categories">
+
+<div class="category" onclick="categoria('Tacos')">
+<div class="category-icon">🌮</div>
+<p>Tacos</p>
+</div>
+
+<div class="category" onclick="categoria('Mariscos')">
+<div class="category-icon">🦐</div>
+<p>Mariscos</p>
+</div>
+
+<div class="category" onclick="categoria('Hamburguesas')">
+<div class="category-icon">🍔</div>
+<p>Hamburguesas</p>
+</div>
+
+<div class="category" onclick="categoria('Pizza')">
+<div class="category-icon">🍕</div>
+<p>Pizza</p>
+</div>
+
+<div class="category" onclick="categoria('Pollo')">
+<div class="category-icon">🍗</div>
+<p>Pollo</p>
+</div>
+
+<div class="category" onclick="categoria('Postres')">
+<div class="category-icon">🍰</div>
+<p>Postres</p>
+</div>
+
+</div>
+
+</section>
+
+<section class="section">
+
+<div class="promotion">
+
+<div>
+<h2>🔥 Promoción de bienvenida</h2>
+
+<p>
+Obtén descuento en tu primer pedido.
+</p>
+</div>
+
+<div class="promo-code">
+SAYULA20
+</div>
+
+</div>
+
+</section>
+
+<section class="section" id="restaurantes">
+
+<div class="section-title">
+
+<h2>Restaurantes destacados</h2>
+
+<button onclick="mostrarTodos()">
+Ver todos
+</button>
+
+</div>
+
+<div class="restaurants">
+</div>
+
+<div class="empty" id="empty">
+No encontramos restaurantes con esa búsqueda.
+</div>
+
+</section>
+
+</main>
+
+<nav class="bottom-nav">
+
+<button onclick="inicio()">
+<span>🏠</span>
+Inicio
+</button>
+
+<button onclick="buscarEnfoque()">
+<span>🔎</span>
+Buscar
+</button>
+
+<button onclick="carrito()" style="position:relative;">
+    🛒
+    <span id="contadorCarrito"
+          style="
+              position:absolute;
+              top:-8px;
+              right:-8px;
+              background:red;
+              color:white;
+              width:22px;
+              height:22px;
+              border-radius:50%;
+              display:none;
+              align-items:center;
+              justify-content:center;
+              font-size:12px;
+              font-weight:bold;
+          ">
+        0
+    </span>
+</button>
+<button onclick="cuenta()">
+<span>👤</span>
+Cuenta
+</button>
+
+</nav>
+
+<script>
+
+async function cargarRestaurantes(){
+
+    try{
+
+        const respuesta = await fetch('/api/restaurants');
+
+        if(!respuesta.ok){
+            throw new Error('No se pudieron cargar los restaurantes');
+        }
+
+        const restaurantes = await respuesta.json();
+
+        console.log('Restaurantes recibidos:', restaurantes);
+
+        const contenedor = document.querySelector('.restaurants');
+
+        if(!contenedor){
+            console.error('No existe .restaurants');
+            return;
+        }
+
+        contenedor.innerHTML = '';
+
+        if(restaurantes.length === 0){
+
+            contenedor.innerHTML = `
+                <p style="
+                    text-align:center;
+                    padding:30px;
+                    color:#777;
+                ">
+                    Todavía no hay restaurantes registrados.
+                </p>
+            `;
+
+            return;
+        }
+
+        restaurantes.forEach(restaurante => {
+
+            const tarjeta = document.createElement('div');
+
+            tarjeta.className = 'restaurant';
+
+            tarjeta.dataset.id = restaurante.id;
+
+            tarjeta.dataset.name = (
+                `${restaurante.name || ''} ${restaurante.description || ''}`
+            ).toLowerCase();
+
+            tarjeta.innerHTML = `
+                <div class="restaurant-image">
+                    ${restaurante.image
+                        ? `<img src="${escapar(restaurante.image)}" alt="${escapar(restaurante.name)}" style="width:100%;height:100%;object-fit:cover">`
+                        : '🍽️'}
+                </div>
+
+                <div class="restaurant-info">
+
+                    <h3>
+                        ${escapar(restaurante.name)}
+                    </h3>
+
+                    <p>
+                        ${escapar(
+                            restaurante.description ||
+                            'Restaurante en Sayula'
+                        )}
+                    </p>
+
+                    <div class="rating">
+                        ${restaurante.listingType === 'directory'
+                            ? 'ℹ️ Información por confirmar'
+                            : '⭐ Nuevo'}
+                    </div>
+
+                    <button
+                        class="restaurant-button"
+                        onclick="abrirRestaurante(
+                            '${escaparJS(String(restaurante.id))}',
+                            '${escaparJS(restaurante.name)}'
+                        )"
+                    >
+                        ${restaurante.listingType === 'directory'
+                            ? 'Ver información'
+                            : 'Ver menú'}
+                    </button>
+
+                </div>
+            `;
+
+            contenedor.appendChild(tarjeta);
+
+        });
+
+        console.log(
+            'Restaurantes mostrados:',
+            contenedor.children.length
+        );
+
+    }catch(error){
+
+        console.error(
+            'Error cargando restaurantes:',
+            error
+        );
+
+        const contenedor =
+            document.querySelector('.restaurants');
+
+        if(contenedor){
+
+            contenedor.innerHTML = `
+                <p style="
+                    text-align:center;
+                    padding:30px;
+                    color:#c00;
+                ">
+                    ❌ No se pudieron cargar los restaurantes.
+                </p>
+            `;
+
+        }
+
+    }
+
+}
+
+function escapar(texto){
+
+    const div = document.createElement('div');
+
+    div.textContent = texto ?? '';
+
+    return div.innerHTML;
+
+}
+
+function escaparJS(texto){
+
+    return String(texto ?? '')
+        .replace(/\\/g,'\\\\')
+        .replace(/'/g,"\\'")
+        .replace(/\n/g,'\\n')
+        .replace(/\r/g,'\\r');
+
+}
+
+
+function buscar(texto){
+
+    const restaurantes =
+        document.querySelectorAll('.restaurant');
+
+    texto =
+        texto.toLowerCase().trim();
+
+    let encontrados = 0;
+
+    restaurantes.forEach(restaurante => {
+
+        const nombre =
+            restaurante.dataset.name || '';
+
+        if(nombre.includes(texto)){
+
+            restaurante.style.display = '';
+            encontrados++;
+
+        }else{
+
+            restaurante.style.display = 'none';
+
+        }
+
+    });
+
+    document.getElementById('empty').style.display =
+        encontrados === 0 ? 'block' : 'none';
+
+}
+
+
+function buscarEnfoque(){
+
+    document
+        .getElementById('searchInput')
+        .focus();
+
+    window.scrollTo({
+        top:0,
+        behavior:'smooth'
+    });
+
+}
+
+
+function irRestaurantes(){
+
+    document
+        .getElementById('restaurantes')
+        .scrollIntoView({
+            behavior:'smooth'
+        });
+
+}
+
+
+function mostrarTodos(){
+
+    document
+        .getElementById('searchInput')
+        .value = '';
+
+    buscar('');
+
+    irRestaurantes();
+
+}
+
+
+function categoria(nombre){
+
+    document
+        .getElementById('searchInput')
+        .value = nombre;
+
+    buscar(nombre);
+
+    irRestaurantes();
+
+}
+
+
+async function abrirRestaurante(id,nombre){
+
+    sessionStorage.setItem('cs_restaurante_actual', JSON.stringify({id:id, nombre:nombre}));
+
+    try{
+
+        const respuesta = await fetch(
+            '/api/restaurants/' + id + '/menu'
+        );
+
+        if(!respuesta.ok){
+            throw new Error('No se pudo cargar el menú');
+        }
+
+        const datos = await respuesta.json();
+        const menu = datos.products || [];
+        const esDirectorio = datos.restaurant?.listingType === 'directory';
+
+        const restaurante = document.querySelector(
+            `.restaurant[data-id="${id}"]`
+        );
+
+        const tarjeta = restaurante || null;
+
+        let html = `
+            <div style="
+                position:fixed;
+                inset:0;
+                background:#f7f7f7;
+                z-index:1000;
+                overflow-y:auto;
+            ">
+
+                <div style="
+                    background:white;
+                    padding:15px 20px;
+                    display:flex;
+                    align-items:center;
+                    gap:15px;
+                    border-bottom:1px solid #ddd;
+                    position:sticky;
+                    top:0;
+                    z-index:10;
+                ">
+
+                    <button
+                        onclick="cerrarMenu()"
+                        style="
+                            border:none;
+                            background:#f1f1f1;
+                            padding:10px 14px;
+                            border-radius:12px;
+                            cursor:pointer;
+                            font-size:18px;
+                        "
+                    >
+                        ←
+                    </button>
+
+                    <h2>${escapar(nombre)}</h2>
+<button
+    onclick="carrito()"
+    style="
+        margin-left:auto;
+        position:relative;
+        border:none;
+        background:#fff3e0;
+        color:#e85d04;
+        padding:10px 14px;
+        border-radius:12px;
+        cursor:pointer;
+        font-size:20px;
+    "
+>
+    🛒
+    <span
+        id="contadorCarritoRestaurante"
+        style="
+            position:absolute;
+            top:-7px;
+            right:-7px;
+            background:red;
+            color:white;
+            width:21px;
+            height:21px;
+            border-radius:50%;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            font-size:12px;
+            font-weight:bold;
+        "
+    >
+        0
+    </span>
+</button>
+
+                </div>
+
+                <div style="
+                    max-width:1000px;
+                    margin:auto;
+                    padding:25px 20px 100px;
+                ">
+
+                    <div style="
+                        background:linear-gradient(135deg,#e85d04,#f48c06);
+                        color:white;
+                        border-radius:22px;
+                        padding:30px;
+                        margin-bottom:25px;
+                    ">
+
+                        <div style="font-size:65px;">
+                            ${datos.restaurant?.image
+                                ? `<img src="${escapar(datos.restaurant.image)}" alt="" style="width:100px;height:100px;object-fit:cover;border-radius:20px">`
+                                : '🍽️'}
+                        </div>
+
+                        <h1 style="margin:10px 0;">
+                            ${escapar(nombre)}
+                        </h1>
+
+                        <p>
+                            Selecciona los productos que quieras pedir.
+                        </p>
+
+                    </div>
+
+                    <h2 style="margin-bottom:20px;">
+                        ${esDirectorio ? 'Información del negocio' : 'Menú'}
+                    </h2>
+
+                    <div id="menuProductos"
+                         style="
+                            display:grid;
+                            grid-template-columns:
+                            repeat(auto-fit,minmax(250px,1fr));
+                            gap:18px;
+                         ">
+        `;
+
+        if(menu.length === 0){
+
+            html += `
+                <div style="
+                    background:white;
+                    padding:30px;
+                    border-radius:18px;
+                    text-align:center;
+                    grid-column:1/-1;
+                ">
+                    <div style="font-size:50px;">
+                        🍽️
+                    </div>
+
+                    <h3>
+                        ${esDirectorio
+                            ? 'Este perfil está pendiente de confirmación.'
+                            : 'Este restaurante todavía no tiene productos.'}
+                    </h3>
+
+                    <p style="color:#777;margin-top:8px;">
+                        ${esDirectorio
+                            ? `Horario publicado: ${escapar(datos.restaurant?.hours || 'Pendiente de confirmar')}<br><br>Dirección: ${escapar(datos.restaurant?.address || 'Pendiente de confirmar')}<br><br>Teléfono: ${escapar(datos.restaurant?.phone || 'Pendiente de confirmar')}`
+                            : 'El restaurante deberá agregar productos desde su panel.'}
+                    </p>
+                </div>
+            `;
+
+        }else{
+
+            menu.forEach(producto => {
+
+                html += `
+
+                    <div style="
+                        background:white;
+                        border-radius:18px;
+                        padding:20px;
+                        box-shadow:0 4px 14px rgba(0,0,0,.07);
+                    ">
+
+                        <div style="
+                            font-size:50px;
+                            margin-bottom:12px;
+                            height:150px;
+                            border-radius:14px;
+                            overflow:hidden;
+                            display:grid;
+                            place-items:center;
+                            background:#fff6ed;
+                        ">
+                            ${producto.image
+                                ? `<img src="${escapar(producto.image)}" alt="${escapar(producto.name)}" style="width:100%;height:100%;object-fit:cover">`
+                                : '🍴'}
+                        </div>
+
+                        <h3 style="margin-bottom:8px;">
+                            ${escapar(producto.name)}
+                        </h3>
+
+                        <p style="
+                            color:#777;
+                            min-height:40px;
+                            margin-bottom:15px;
+                        ">
+                            ${escapar(
+                                producto.description ||
+                                'Producto disponible'
+                            )}
+                        </p>
+
+                        <div style="
+                            display:flex;
+                            align-items:center;
+                            justify-content:space-between;
+                            gap:10px;
+                        ">
+
+                            <strong style="
+                                color:#e85d04;
+                                font-size:19px;
+                            ">
+                                $${Number(producto.price).toFixed(2)}
+                            </strong>
+
+                            <button
+                                onclick='agregarProducto(${JSON.stringify(producto)}, ${id}, ${JSON.stringify(nombre)})'
+                                style="
+                                    border:none;
+                                    background:#e85d04;
+                                    color:white;
+                                    padding:10px 15px;
+                                    border-radius:11px;
+                                    cursor:pointer;
+                                    font-weight:bold;
+                                "
+                            >
+                                + Agregar
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                `;
+
+            });
+
+        }
+
+        html += `
+                    </div>
+
+                </div>
+
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML(
+            'beforeend',
+            html
+        );
+actualizarContadorCarrito();
+    }catch(error){
+
+        console.error(error);
+
+        alert(
+            'No se pudo cargar el menú de ' +
+            nombre
+        );
+
+    }
+
+}
+
+
+function cerrarMenu(){
+
+    const ventanas =
+        document.querySelectorAll(
+            'body > div[style*="z-index:1000"]'
+        );
+
+    ventanas.forEach(ventana => {
+        ventana.remove();
+    });
+
+}
+
+function agregarProducto(producto, restauranteId, restauranteNombre){
+
+    let carritoActual = JSON.parse(
+        localStorage.getItem('come_sayula_carrito') || '[]'
+    );
+
+    const existente = carritoActual.find(
+        item =>
+            item.id === producto.id &&
+            item.restaurantId === restauranteId
+    );
+
+    if(existente){
+
+        existente.quantity++;
+
+    }else{
+
+        carritoActual.push({
+
+            id: producto.id,
+
+            name: producto.name,
+
+            price: Number(producto.price),
+
+            quantity: 1,
+
+            restaurantId: restauranteId,
+
+            restaurantName: restauranteNombre
+
+        });
+
+    }
+
+    localStorage.setItem(
+        'come_sayula_carrito',
+        JSON.stringify(carritoActual)
+    );
+
+    // ACTUALIZAR CONTADOR INMEDIATAMENTE
+    actualizarContadorCarrito();
+
+    mostrarAvisoCarrito('✅ '+producto.name+' agregado');
+
+}
+
+function mostrarAvisoCarrito(mensaje){
+    document.getElementById('avisoCarrito')?.remove();
+    const aviso=document.createElement('div');aviso.id='avisoCarrito';aviso.textContent=mensaje;
+    aviso.style.cssText='position:fixed;right:18px;bottom:85px;z-index:3000;background:#26352b;color:white;padding:13px 18px;border-radius:12px;box-shadow:0 8px 24px #0003;font-weight:bold;animation:fadeIn .2s ease';
+    document.body.appendChild(aviso);setTimeout(()=>aviso.remove(),1800);
+}
+
+function actualizarContadorCarrito(){
+
+    const carritoActual = JSON.parse(
+        localStorage.getItem('come_sayula_carrito') || '[]'
+    );
+
+    const cantidad = carritoActual.reduce(
+        (total, producto) => {
+            return total + Number(producto.quantity || 0);
+        },
+        0
+    );
+
+    const contador =
+        document.getElementById('contadorCarrito');
+
+    const contadorRestaurante =
+        document.getElementById('contadorCarritoRestaurante');
+
+    if(contador){
+
+        contador.textContent = cantidad;
+
+        contador.style.display =
+            cantidad > 0 ? 'flex' : 'none';
+
+    }
+
+    if(contadorRestaurante){
+
+        contadorRestaurante.textContent = cantidad;
+
+        contadorRestaurante.style.display =
+            cantidad > 0 ? 'flex' : 'none';
+
+    }
+
+}
+document.addEventListener('DOMContentLoaded', () => {
+    actualizarContadorCarrito();
+});
+function carrito(){
+
+    const carritoActual =
+        JSON.parse(
+            localStorage.getItem('come_sayula_carrito') || '[]'
+        );
+
+    let ventana = document.createElement('div');
+
+    ventana.id = 'ventanaCarrito';
+
+    ventana.style.cssText = `
+        position:fixed;
+        inset:0;
+        background:linear-gradient(180deg,#fff8f1 0,#f7f7f7 240px);
+        z-index:2000;
+        overflow-y:auto;
+        font-family:inherit;
+    `;
+
+    let subtotal = 0;
+
+    carritoActual.forEach(producto => {
+
+        subtotal +=
+            Number(producto.price) *
+            Number(producto.quantity);
+
+    });
+
+    let contenido = '';
+
+    if(carritoActual.length === 0){
+
+        contenido = `
+
+            <div style="
+                background:white;
+                padding:40px 25px;
+                border-radius:20px;
+                text-align:center;
+            ">
+
+                <div style="font-size:70px;">
+                    🛒
+                </div>
+
+                <h2>
+                    Tu carrito está vacío
+                </h2>
+
+                <p style="
+                    color:#777;
+                    margin:10px 0 25px;
+                ">
+                    Agrega productos de tus restaurantes favoritos.
+                </p>
+
+                <button
+                    onclick="cerrarCarrito()"
+                    style="
+                        border:none;
+                        background:#e85d04;
+                        color:white;
+                        padding:14px 22px;
+                        border-radius:12px;
+                        cursor:pointer;
+                        font-weight:bold;
+                    "
+                >
+                    Ver restaurantes
+                </button>
+
+            </div>
+
+        `;
+
+    }else{
+
+        carritoActual.forEach(producto => {
+
+            const totalProducto =
+                Number(producto.price) *
+                Number(producto.quantity);
+
+            contenido += `
+
+                <div style="
+                    background:white;
+                    border-radius:18px;
+                    padding:18px;
+                    margin-bottom:15px;
+                    border:1px solid #f1e8df;
+                    box-shadow:0 8px 24px rgba(70,40,20,.07);
+                ">
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        gap:15px;
+                    ">
+
+                        <div>
+
+                            <div style="
+                                font-size:35px;
+                                margin-bottom:8px;
+                            ">
+                                🍽️
+                            </div>
+
+                            <h3>
+                                ${escapar(producto.name)}
+                            </h3>
+
+                            <p style="
+                                color:#777;
+                                margin-top:5px;
+                            ">
+                                ${escapar(producto.restaurantName)}
+                            </p>
+
+                           <div style="
+    margin-top:12px;
+    color:#555;
+    font-size:14px;
+">
+    Precio unitario
+</div>
+
+<strong style="
+    display:block;
+    color:#e85d04;
+    font-size:20px;
+    margin-top:3px;
+">
+    $${Number(producto.price).toFixed(2)}
+</strong>
+
+                        </div>
+
+                        <div style="
+                            display:flex;
+                            align-items:center;
+                            gap:8px;
+                        ">
+
+                            <button
+                                onclick="cambiarCantidad(${producto.id},${producto.restaurantId},-1)"
+                                style="
+                                    border:none;
+                                    background:#eee;
+                                    width:35px;
+                                    height:35px;
+                                    border-radius:9px;
+                                    cursor:pointer;
+                                    font-size:18px;
+                                "
+                            >
+                                −
+                            </button>
+
+                            <strong>
+                                ${producto.quantity}
+                            </strong>
+
+                            <button
+                                onclick="cambiarCantidad(${producto.id},${producto.restaurantId},1)"
+                                style="
+                                    border:none;
+                                    background:#e85d04;
+                                    color:white;
+                                    width:35px;
+                                    height:35px;
+                                    border-radius:9px;
+                                    cursor:pointer;
+                                    font-size:18px;
+                                "
+                            >
+                                +
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        align-items:center;
+                        margin-top:15px;
+                        border-top:1px solid #eee;
+                        padding-top:12px;
+                    ">
+
+                        <strong>
+                            $${totalProducto.toFixed(2)}
+                        </strong>
+
+                        <button
+                            onclick="eliminarProducto(${producto.id},${producto.restaurantId})"
+                            style="
+                                border:none;
+                                background:#ffe5e5;
+                                color:#c00;
+                                padding:8px 12px;
+                                border-radius:9px;
+                                cursor:pointer;
+                            "
+                        >
+                            🗑️ Eliminar
+                        </button>
+
+                    </div>
+
+                </div>
+
+            `;
+
+        });
+
+    }
+
+    ventana.innerHTML = `
+
+        <div style="
+            background:white;
+            padding:15px 20px;
+            border-bottom:1px solid #ddd;
+            display:flex;
+            align-items:center;
+            gap:15px;
+            position:sticky;
+            top:0;
+            z-index:5;
+            box-shadow:0 3px 14px rgba(0,0,0,.06);
+        ">
+
+            <button
+                onclick="cerrarCarrito()"
+                style="
+                    border:none;
+                    background:#eee;
+                    padding:10px 14px;
+                    border-radius:11px;
+                    cursor:pointer;
+                    font-size:18px;
+                "
+            >
+                ←
+            </button>
+
+            <h2 style="margin:0;font-size:22px;color:#2f241f;">
+                🛒 Mi carrito
+            </h2>
+<button
+    onclick="seguirComprando()"
+    style="
+        margin-left:auto;
+        border:none;
+        background:#fff3e0;
+        color:#e85d04;
+        padding:10px 14px;
+        border-radius:11px;
+        cursor:pointer;
+        font-weight:bold;
+    "
+>
+    ← Seguir comprando
+</button>
+
+        </div>
+
+        <div style="
+            max-width:800px;
+            margin:auto;
+            padding:28px 20px 100px;
+        ">
+
+            ${contenido}
+
+            ${
+                carritoActual.length > 0
+                ?
+                `
+
+                <div style="
+                    background:white;
+                    padding:22px;
+                    border-radius:20px;
+                    margin-top:20px;
+                    border:1px solid #f1e8df;
+                    box-shadow:0 10px 28px rgba(70,40,20,.09);
+                ">
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        margin-bottom:10px;
+                    ">
+                        <span>
+                            Subtotal
+                        </span>
+
+                        <strong>
+                            $${subtotal.toFixed(2)}
+                        </strong>
+                    </div>
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        margin-bottom:18px;
+                    ">
+                        <span>
+                            Envío
+                        </span>
+
+                        <span>
+                            Se calculará después
+                        </span>
+                    </div>
+
+                    <hr>
+
+                    <div style="
+                        display:flex;
+                        justify-content:space-between;
+                        align-items:center;
+                        font-size:21px;
+                        margin:18px 0;
+                    ">
+                        <strong>
+                            Total
+                        </strong>
+
+                        <strong style="color:#e85d04;">
+                            $${subtotal.toFixed(2)}
+                        </strong>
+
+                    </div>
+
+                    <button
+                        onclick="continuarPedido()"
+                        style="
+                            width:100%;
+                            border:none;
+                            background:linear-gradient(135deg,#f47b20,#e85d04);
+                            color:white;
+                            padding:16px;
+                            border-radius:13px;
+                            cursor:pointer;
+                            font-size:16px;
+                            font-weight:bold;
+                            box-shadow:0 7px 18px rgba(232,93,4,.28);
+                        "
+                    >
+                        Continuar con el pedido
+                    </button>
+
+                </div>
+
+                `
+                :
+                ''
+            }
+
+        </div>
+
+    `;
+
+    document.body.appendChild(ventana);
+
+}
+
+
+function cerrarCarrito(){
+
+    const ventana =
+        document.getElementById('ventanaCarrito');
+
+    if(ventana){
+        ventana.remove();
+    }
+
+}
+
+
+async function seguirComprando(){
+
+    const restaurante = JSON.parse(
+        sessionStorage.getItem('cs_restaurante_actual') || 'null'
+    );
+
+    cerrarCarrito();
+
+    actualizarContadorCarrito();
+
+    if(!restaurante){
+        return;
+    }
+
+    await abrirRestaurante(
+        restaurante.id,
+        restaurante.nombre
+    );
+}
+
+
+function cambiarCantidad(id,restaurantId,cambio){
+
+    let carritoActual =
+        JSON.parse(
+            localStorage.getItem('come_sayula_carrito') || '[]'
+        );
+
+    const producto =
+        carritoActual.find(
+            item =>
+                item.id === id &&
+                item.restaurantId === restaurantId
+        );
+
+    if(!producto){
+        return;
+    }
+
+    producto.quantity += cambio;
+
+    if(producto.quantity <= 0){
+
+        carritoActual =
+            carritoActual.filter(
+                item =>
+                    !(
+                        item.id === id &&
+                        item.restaurantId === restaurantId
+                    )
+            );
+
+    }
+
+    localStorage.setItem(
+        'come_sayula_carrito',
+        JSON.stringify(carritoActual)
+    );
+
+    cerrarCarrito();
+
+    carrito();
+
+}
+
+
+function eliminarProducto(id,restaurantId){
+
+    let carritoActual =
+        JSON.parse(
+            localStorage.getItem('come_sayula_carrito') || '[]'
+        );
+
+    carritoActual =
+        carritoActual.filter(
+            item =>
+                !(
+                    item.id === id &&
+                    item.restaurantId === restaurantId
+                )
+        );
+
+   localStorage.setItem(
+    'come_sayula_carrito',
+    JSON.stringify(carritoActual)
+);
+
+actualizarContadorCarrito();
+
+cerrarCarrito();
+
+carrito();
+
+}
+
+let mapaEntregaCliente=null;
+let marcadorEntregaCliente=null;
+let coordenadasEntrega=null;
+let cotizacionEnvio=null;
+let solicitudPedidoId=null;
+
+function continuarPedido(){
+    const token=sessionStorage.getItem('cs_token');
+    const usuario=JSON.parse(sessionStorage.getItem('cs_user')||'null');
+    if(!token||!usuario){location.href='/auth.html';return;}
+    if(usuario.role!=='customer'){alert('Debes entrar como cliente para realizar pedidos.');return;}
+
+    const productos=JSON.parse(localStorage.getItem('come_sayula_carrito')||'[]');
+    if(!productos.length){alert('Tu carrito está vacío.');return;}
+    if(!productos.every(item=>item.restaurantId===productos[0].restaurantId)){
+        alert('Sólo puedes pedir productos de un restaurante a la vez.');return;
+    }
+
+    const total=productos.reduce((suma,item)=>suma+Number(item.price)*Number(item.quantity),0);
+    solicitudPedidoId=(globalThis.crypto?.randomUUID?globalThis.crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2));
+    cotizacionEnvio=null;
+    cerrarCarrito();
+    const ventana=document.createElement('div');
+    ventana.id='ventanaCheckout';
+    ventana.style.cssText='position:fixed;inset:0;background:#0008;z-index:2100;overflow:auto;padding:20px;display:grid;place-items:center';
+    ventana.innerHTML=`<div style="width:min(620px,100%);background:white;border-radius:22px;padding:25px;box-shadow:0 22px 60px #0004">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:15px"><div><small style="color:#e85d04;font-weight:bold">ÚLTIMO PASO</small><h2 style="margin:5px 0">Confirmar entrega</h2></div><button onclick="cerrarCheckout();carrito()" style="border:0;background:#eee;width:38px;height:38px;border-radius:50%;cursor:pointer">✕</button></div>
+        <div style="background:#fff8f1;border-radius:14px;padding:15px;margin:17px 0"><strong>${escapar(productos[0].restaurantName||'Restaurante')}</strong>${productos.map(item=>`<div style="display:flex;justify-content:space-between;margin-top:8px"><span>${item.quantity} × ${escapar(item.name)}</span><strong>$${(Number(item.price)*Number(item.quantity)).toFixed(2)}</strong></div>`).join('')}<hr style="border:0;border-top:1px solid #eadfd5;margin:13px 0"><div style="display:flex;justify-content:space-between"><span>Subtotal</span><strong>$${total.toFixed(2)}</strong></div><div style="display:flex;justify-content:space-between;margin-top:7px"><span>Envío <small id="distanciaEnvio"></small></span><strong id="costoEnvio">Por calcular</strong></div><div style="display:flex;justify-content:space-between;font-size:20px;margin-top:10px"><strong>Total</strong><strong id="totalPedido" style="color:#e85d04">$${total.toFixed(2)}</strong></div></div>
+        <form onsubmit="confirmarPedido(event)">
+            <label style="display:block;font-weight:bold;margin:12px 0 6px">📍 Dirección de entrega</label><textarea id="direccionPedido" required minlength="8" placeholder="Calle, número y colonia" style="width:100%;min-height:78px;padding:12px;border:1px solid #ddd;border-radius:11px;font:inherit"></textarea>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px"><button type="button" onclick="obtenerUbicacionEntrega()" style="border:1px solid #cfe6d6;background:#eef9f1;color:#20713a;padding:12px;border-radius:11px;font-weight:bold;cursor:pointer">📌 Usar mi GPS</button><button type="button" onclick="elegirUbicacionManual()" style="border:1px solid #f2c49f;background:#fff5ec;color:#a84405;padding:12px;border-radius:11px;font-weight:bold;cursor:pointer">🗺️ Elegir en el mapa</button></div>
+            <div id="estadoUbicacionEntrega" style="font-size:13px;color:#666;margin-top:7px">La ubicación exacta ayuda al repartidor a encontrar tu domicilio.</div>
+            <div id="mapaEntregaCliente" style="height:220px;border-radius:13px;margin-top:10px;display:none"></div>
+            <label style="display:block;font-weight:bold;margin:12px 0 6px">🏠 Referencias</label><input id="referenciaPedido" placeholder="Color de casa, entre calles…" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:11px">
+            <label style="display:block;font-weight:bold;margin:12px 0 6px">💳 Forma de pago</label><select id="pagoPedido" onchange="actualizarAvisoPago()" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:11px;background:white"><option value="Efectivo">Efectivo al recibir</option><option value="Transferencia">Transferencia (requiere confirmación)</option><option value="Tarjeta al recibir">Tarjeta al recibir</option></select><div id="avisoPago" style="background:#fff7db;color:#725000;padding:10px;border-radius:10px;margin-top:8px;font-size:13px">El pago se realizará cuando recibas el pedido.</div>
+            <div id="errorPedido" style="color:#b42318;margin-top:10px"></div><button id="botonConfirmarPedido" type="submit" style="width:100%;border:0;background:linear-gradient(135deg,#f47b20,#e85d04);color:white;padding:15px;border-radius:12px;font-weight:bold;font-size:16px;margin-top:16px;cursor:pointer">Selecciona ubicación para calcular</button>
+        </form></div>`;
+    document.body.appendChild(ventana);
+}
+
+function actualizarAvisoPago(){const aviso=document.getElementById('avisoPago');if(!aviso)return;aviso.textContent=document.getElementById('pagoPedido').value==='Transferencia'?'⏳ La transferencia quedará como pago por confirmar hasta que el restaurante compruebe el depósito. No compartas claves ni códigos.':'El pago se realizará cuando recibas el pedido.';}
+
+function obtenerUbicacionEntrega(){
+    const estado=document.getElementById('estadoUbicacionEntrega');
+    if(!window.isSecureContext){estado.textContent='⚠️ Safari bloqueó el GPS porque la conexión no usa HTTPS. Elige tu domicilio manualmente en el mapa.';elegirUbicacionManual();return;}
+    if(!navigator.geolocation){estado.textContent='Este dispositivo no permite obtener ubicación. Elige tu domicilio en el mapa.';elegirUbicacionManual();return;}
+    estado.textContent='Obteniendo tu ubicación…';
+    navigator.geolocation.getCurrentPosition(posicion=>{
+        mostrarMapaEntrega(posicion.coords.latitude,posicion.coords.longitude,17,true);
+        estado.textContent='✅ Ubicación seleccionada. Puedes mover el marcador tocando el mapa.';
+    },error=>{estado.textContent='⚠️ No se pudo usar el GPS ('+(error.code===1?'permiso bloqueado':'ubicación no disponible')+'). Marca tu domicilio manualmente.';elegirUbicacionManual();},{enableHighAccuracy:true,timeout:15000,maximumAge:30000});
+}
+
+function elegirUbicacionManual(){
+    const estado=document.getElementById('estadoUbicacionEntrega');
+    estado.textContent='🗺️ Toca el mapa o arrastra el marcador hasta la entrada de tu domicilio.';
+    mostrarMapaEntrega(coordenadasEntrega?.latitude??19.8826,coordenadasEntrega?.longitude??-103.5998,15,false);
+}
+
+function mostrarMapaEntrega(latitude,longitude,zoom,confirmada){
+    if(confirmada)coordenadasEntrega={latitude:Number(latitude),longitude:Number(longitude)};
+    const contenedor=document.getElementById('mapaEntregaCliente');contenedor.style.display='block';
+    if(!mapaEntregaCliente){
+        mapaEntregaCliente=L.map(contenedor).setView([latitude,longitude],zoom);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(mapaEntregaCliente);
+        marcadorEntregaCliente=L.marker([latitude,longitude],{draggable:true}).addTo(mapaEntregaCliente);
+        const guardar=punto=>{coordenadasEntrega={latitude:punto.lat,longitude:punto.lng};marcadorEntregaCliente.setLatLng(punto);document.getElementById('estadoUbicacionEntrega').textContent='✅ Punto de entrega seleccionado. Puedes ajustarlo antes de pedir.';cotizarEnvio();};
+        mapaEntregaCliente.on('click',evento=>guardar(evento.latlng));
+        marcadorEntregaCliente.on('dragend',evento=>guardar(evento.target.getLatLng()));
+    }else{mapaEntregaCliente.setView([latitude,longitude],zoom);marcadorEntregaCliente.setLatLng([latitude,longitude]);}
+    if(!confirmada)coordenadasEntrega=null;
+    setTimeout(()=>mapaEntregaCliente.invalidateSize(),50);
+    if(confirmada)cotizarEnvio();
+}
+
+async function cotizarEnvio(){
+    const productos=JSON.parse(localStorage.getItem('come_sayula_carrito')||'[]');
+    if(!coordenadasEntrega||!productos.length)return;
+    const subtotal=productos.reduce((suma,item)=>suma+Number(item.price)*Number(item.quantity),0);
+    const costo=document.getElementById('costoEnvio');if(costo)costo.textContent='Calculando…';
+    try{
+        const respuesta=await fetch('/api/delivery-quote',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sessionStorage.getItem('cs_token')},body:JSON.stringify({restaurantId:productos[0].restaurantId,deliveryLatitude:coordenadasEntrega.latitude,deliveryLongitude:coordenadasEntrega.longitude})});
+        const datos=await respuesta.json();if(!respuesta.ok)throw new Error(datos.error||'No se pudo calcular el envío.');
+        cotizacionEnvio=datos;
+        document.getElementById('costoEnvio').textContent='$'+Number(datos.deliveryFee).toFixed(2);
+        document.getElementById('distanciaEnvio').textContent=datos.distanceKm===null?'(tarifa base)':'('+Number(datos.distanceKm).toFixed(1)+' km)';
+        document.getElementById('totalPedido').textContent='$'+(subtotal+Number(datos.deliveryFee)).toFixed(2);
+        document.getElementById('botonConfirmarPedido').textContent='Realizar pedido · $'+(subtotal+Number(datos.deliveryFee)).toFixed(2);
+    }catch(error){cotizacionEnvio=null;document.getElementById('errorPedido').textContent='❌ '+error.message;}
+}
+
+function cerrarCheckout(){
+    if(mapaEntregaCliente){mapaEntregaCliente.remove();mapaEntregaCliente=null;marcadorEntregaCliente=null;}
+    coordenadasEntrega=null;
+    cotizacionEnvio=null;solicitudPedidoId=null;
+    document.getElementById('ventanaCheckout')?.remove();
+}
+
+async function confirmarPedido(evento){
+    evento.preventDefault();
+    const productos=JSON.parse(localStorage.getItem('come_sayula_carrito')||'[]');
+    const boton=document.getElementById('botonConfirmarPedido');
+    if(!productos.length){cerrarCheckout();return;}
+    if(!coordenadasEntrega||!cotizacionEnvio){document.getElementById('errorPedido').textContent='📍 Selecciona tu ubicación y espera el cálculo de envío.';return;}
+    boton.disabled=true;boton.textContent='Guardando pedido…';
+    const address=direccionPedido.value.trim()+(referenciaPedido.value.trim()?' | Referencia: '+referenciaPedido.value.trim():'');
+    try{
+        const respuesta=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sessionStorage.getItem('cs_token')},body:JSON.stringify({restaurantId:productos[0].restaurantId,address,paymentMethod:pagoPedido.value,deliveryLatitude:coordenadasEntrega.latitude,deliveryLongitude:coordenadasEntrega.longitude,clientRequestId:solicitudPedidoId,items:productos.map(item=>({productId:item.id,quantity:item.quantity}))})});
+        const datos=await respuesta.json();if(!respuesta.ok)throw new Error(datos.error||'No se pudo guardar el pedido.');
+        localStorage.removeItem('come_sayula_carrito');actualizarContadorCarrito();
+        const avisoPago=datos.paymentStatus==='awaiting_confirmation'?'<div style="background:#fff3cd;color:#715200;padding:12px;border-radius:11px;margin-bottom:15px"><strong>⏳ Transferencia: pago por confirmar</strong><br><small>El restaurante debe comprobar el depósito.</small></div>':'';
+        document.getElementById('ventanaCheckout').innerHTML=`<div style="width:min(480px,100%);background:white;border-radius:22px;padding:35px;text-align:center"><div style="font-size:65px">✅</div><h2>Pedido #${datos.orderId} confirmado</h2>${avisoPago}<p style="color:#666;margin:12px 0 22px">Productos: $${Number(datos.subtotal).toFixed(2)}<br>Envío: $${Number(datos.deliveryFee).toFixed(2)}<br><strong>Total: $${Number(datos.total).toFixed(2)}</strong></p><button onclick="location.href='/tracking.html'" style="width:100%;border:0;background:#e85d04;color:white;padding:14px;border-radius:12px;font-weight:bold;cursor:pointer">Ver seguimiento</button><button onclick="location.reload()" style="width:100%;border:0;background:#eee;padding:13px;border-radius:12px;font-weight:bold;margin-top:9px;cursor:pointer">Volver al inicio</button></div>`;
+    }catch(error){document.getElementById('errorPedido').textContent='❌ '+error.message;boton.disabled=false;boton.textContent='Intentar nuevamente';}
+}
+function cerrarSesion(){
+
+    const confirmar = confirm(
+        '¿Seguro que quieres cerrar sesión?'
+    );
+
+    if(!confirmar){
+        return;
+    }
+
+    sessionStorage.removeItem('cs_token');
+    sessionStorage.removeItem('cs_user');
+
+    alert('✅ Sesión cerrada correctamente.');
+
+    location.reload();
+}
+function cuenta(){
+
+    const token = sessionStorage.getItem('cs_token');
+
+    const usuario = JSON.parse(
+        sessionStorage.getItem('cs_user') || 'null'
+    );
+
+    if(token && usuario){
+
+        const nombre =
+            usuario.name ||
+            usuario.username ||
+            'Usuario';
+
+        const correo =
+            usuario.email ||
+            'No disponible';
+
+        let menuCuenta =
+            '👤 MI CUENTA\n\n' +
+            'Usuario: ' + nombre + '\n' +
+            'Correo: ' + correo + '\n\n';
+
+        // 🍽️ CUENTA DEL RESTAURANTE
+        if(usuario.role === 'restaurant'){
+
+            menuCuenta +=
+                '🍽️ 1 = Panel del restaurante\n' +
+                '🚪 2 = Cerrar sesión\n' +
+                '❌ 3 = Cancelar';
+
+            const opcion = prompt(menuCuenta);
+
+            if(opcion === '1'){
+
+                location.href = '/restaurant.html';
+
+            }else if(opcion === '2'){
+
+                cerrarSesion();
+
+            }
+
+            return;
+        }
+
+        // 🛵 CUENTA DEL REPARTIDOR
+        if(usuario.role === 'delivery'){
+
+            menuCuenta +=
+                '🛵 1 = Panel de repartidor\n' +
+                '🚪 2 = Cerrar sesión\n' +
+                '❌ 3 = Cancelar';
+
+            const opcion = prompt(menuCuenta);
+
+            if(opcion === '1'){
+
+                location.href = '/delivery.html';
+
+            }else if(opcion === '2'){
+
+                cerrarSesion();
+
+            }
+
+            return;
+        }
+
+        // 👤 CUENTA DEL CLIENTE
+        menuCuenta +=
+            '📍 1 = Mis pedidos y seguimiento\n' +
+            '🚪 2 = Cerrar sesión\n' +
+            '❌ 3 = Cancelar';
+
+        const opcion = prompt(menuCuenta);
+
+        if(opcion === '1'){
+
+            location.href = '/tracking.html';
+
+        }else if(opcion === '2'){
+
+            cerrarSesion();
+
+        }
+
+        return;
+    }
+
+    location.href = '/auth.html';
+}
+function iniciarConGoogle(){
+
+    if(!window.google || !google.accounts){
+        alert('❌ Google todavía no está disponible. Intenta nuevamente.');
+        return;
+    }
+
+    const clientId =
+        '846821366103-clbjraiah8qvdb5gia3op8h8rsu4c8ba.apps.googleusercontent.com';
+
+    google.accounts.id.initialize({
+        client_id: clientId,
+        callback: recibirGoogle
+    });
+
+    google.accounts.id.prompt();
+}
+async function recibirGoogle(response){
+
+    try{
+
+        const respuesta = await fetch(
+            '/api/auth/google',
+            {
+                method:'POST',
+
+                headers:{
+                    'Content-Type':'application/json'
+                },
+
+                body:JSON.stringify({
+                    credential:response.credential
+                })
+            }
+        );
+
+        const datos = await respuesta.json();
+
+        if(!respuesta.ok){
+
+            throw new Error(
+                datos.error ||
+                'No se pudo iniciar sesión con Google'
+            );
+
+        }
+
+        sessionStorage.setItem(
+            'cs_token',
+            datos.token
+        );
+
+        sessionStorage.setItem(
+            'cs_user',
+            JSON.stringify(datos.user)
+        );
+
+        alert(
+            '✅ Inicio de sesión con Google correcto'
+        );
+
+        location.reload();
+
+    }catch(error){
+
+        alert(
+            '❌ ' + error.message
+        );
+
+    }
+
+}
+function inicio(){
+
+    window.scrollTo({
+        top:0,
+        behavior:'smooth'
+    });
+
+}
+
+
+/* CARGAR RESTAURANTES AL ABRIR */
+
+window.addEventListener('DOMContentLoaded', function(){
+    cargarRestaurantes();
+});
+
+</script>
+
+<script src="/pwa-install.js" defer></script></body>
+</html>
+
+

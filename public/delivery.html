@@ -1,0 +1,893 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+
+<title>COME SAYULA - Repartidores</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<style>
+
+*{
+    box-sizing:border-box;
+    margin:0;
+    padding:0;
+}
+
+body{
+    font-family:Arial,sans-serif;
+    background:#f4f6f8;
+    color:#222;
+}
+
+header{
+    background:linear-gradient(
+        135deg,
+        #0077b6,
+        #00b4d8
+    );
+    color:white;
+    padding:22px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+}
+
+header button{
+    border:none;
+    background:white;
+    color:#0077b6;
+    padding:10px 16px;
+    border-radius:10px;
+    cursor:pointer;
+    font-weight:bold;
+}
+
+.container{
+    max-width:1100px;
+    margin:auto;
+    padding:25px;
+}
+
+h2{
+    margin-bottom:15px;
+}
+
+.seccion{
+    margin-bottom:35px;
+}
+
+.pedidos{
+    display:grid;
+    grid-template-columns:
+        repeat(auto-fit,minmax(330px,1fr));
+    gap:20px;
+}
+
+.pedido{
+    background:white;
+    padding:20px;
+    border-radius:18px;
+    box-shadow:
+        0 3px 12px rgba(0,0,0,.08);
+}
+
+.pedido h3{
+    margin-bottom:10px;
+}
+
+.info{
+    color:#555;
+    line-height:1.6;
+    margin-bottom:15px;
+}
+
+.items{
+    background:#f4f4f4;
+    border-radius:10px;
+    padding:12px;
+    margin-bottom:15px;
+}
+
+.item{
+    display:flex;
+    justify-content:space-between;
+    padding:4px 0;
+}
+
+.total{
+    font-size:20px;
+    font-weight:bold;
+    margin-bottom:15px;
+}
+
+button.aceptar{
+    width:100%;
+    border:none;
+    padding:13px;
+    border-radius:10px;
+    background:#0077b6;
+    color:white;
+    font-size:16px;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+button.aceptar:hover{
+    background:#005f8f;
+}
+
+select{
+    width:100%;
+    padding:12px;
+    border-radius:10px;
+    border:1px solid #ddd;
+    font-weight:bold;
+}
+
+.vacio{
+    background:white;
+    padding:35px;
+    border-radius:15px;
+    text-align:center;
+    color:#777;
+}
+
+.error{
+    background:#ffe5e5;
+    color:#a00000;
+    padding:15px;
+    border-radius:12px;
+    margin-bottom:20px;
+}
+
+.mapa-entrega{
+    height:280px;
+    margin-top:14px;
+    border-radius:14px;
+    overflow:hidden;
+    display:none;
+    border:1px solid #d7e3ea;
+}
+
+.acciones-mapa{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    margin:12px 0;
+}
+
+.acciones-mapa button,.acciones-mapa a{
+    border:none;
+    border-radius:10px;
+    padding:12px;
+    font-weight:bold;
+    text-align:center;
+    text-decoration:none;
+    cursor:pointer;
+}
+
+.compartir{background:#16a34a;color:white;}
+.ruta{background:#e8f3f8;color:#006b9c;}
+.ubicacion-activa{color:#16713a;font-size:13px;margin-top:8px;}
+
+</style>
+<link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><meta name="theme-color" content="#e85d04"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="COME SAYULA">
+</head>
+
+<body>
+
+<header>
+
+    <h1>🛵 COME SAYULA</h1>
+
+    <button onclick="cerrarSesion()">
+        Cerrar sesión
+    </button>
+
+</header>
+
+<div class="container">
+
+    <div id="error"></div>
+
+    <section class="seccion">
+
+        <h2>
+            📦 Pedidos disponibles
+        </h2>
+
+        <div
+            id="disponibles"
+            class="pedidos"
+        ></div>
+
+    </section>
+
+    <section class="seccion">
+
+        <h2>
+            🛵 Mis entregas
+        </h2>
+
+        <div
+            id="misPedidos"
+            class="pedidos"
+        ></div>
+
+    </section>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+
+let seguimientoActivo=null;
+let relojUbicacion=null;
+let ultimaUbicacion=null;
+let mapaEntrega=null;
+let marcadorEntrega=null;
+let marcadorDestino=null;
+let lineaRuta=null;
+let destinoActivo=null;
+let ultimaConsultaRuta=0;
+
+function token(){
+
+    return sessionStorage.getItem(
+        'cs_token'
+    );
+
+}
+
+function usuario(){
+
+    try{
+
+        return JSON.parse(
+            sessionStorage.getItem(
+                'cs_user'
+            ) || 'null'
+        );
+
+    }catch(e){
+
+        return null;
+
+    }
+
+}
+
+function comprobarAcceso(){
+
+    const t = token();
+    const u = usuario();
+
+    if(!t || !u){
+
+        location.href='/home3.html';
+
+        return false;
+
+    }
+
+    if(u.role !== 'delivery'){
+
+        alert(
+            '⛔ Esta sección es únicamente para repartidores.'
+        );
+
+        location.href='/home3.html';
+
+        return false;
+
+    }
+
+    return true;
+
+}
+
+async function cargar(){
+
+    try{
+
+        await Promise.all([
+            cargarDisponibles(),
+            cargarMisPedidos()
+        ]);
+
+    }catch(error){
+
+        mostrarError(error.message);
+
+    }
+
+}
+
+async function cargarDisponibles(){
+
+    const respuesta = await fetch(
+        '/api/delivery/orders/available',
+        {
+            headers:{
+                'Authorization':
+                    'Bearer ' + token()
+            }
+        }
+    );
+
+    const datos =
+        await respuesta.json();
+
+    if(!respuesta.ok){
+
+        throw new Error(
+            datos.error ||
+            'No se pudieron cargar los pedidos.'
+        );
+
+    }
+
+    const contenedor =
+        document.getElementById(
+            'disponibles'
+        );
+
+    const pedidos=Array.isArray(datos)?datos:(datos.orders||[]);
+
+    if(!pedidos.length){
+
+        contenedor.innerHTML = `
+            <div class="vacio">
+                📭 No hay pedidos disponibles.
+            </div>
+        `;
+
+        return;
+
+    }
+
+    contenedor.innerHTML =
+        pedidos.map(p => `
+
+        <div class="pedido">
+
+            <h3>
+                📦 Pedido #${p.id}
+            </h3>
+
+            <div class="info">
+
+                🍽️ <strong>
+                    ${escapar(
+                        p.restaurant_name
+                    )}
+                </strong>
+
+                <br>
+
+                📍 Restaurante:
+                ${escapar(
+                    p.restaurant_address ||
+                    'Sin dirección'
+                )}
+
+                <br>
+
+                🏠 Entrega:
+                ${escapar(
+                    p.address
+                )}
+
+                <br>
+
+                👤 Cliente:
+                ${escapar(
+                    p.customer_name
+                )}
+
+                <br>
+
+                📞 Teléfono:
+                ${escapar(
+                    p.customer_phone ||
+                    'Sin teléfono'
+                )}
+
+                ${p.distance_to_restaurant_km==null?'':'<br>📏 A '+Number(p.distance_to_restaurant_km).toFixed(1)+' km del restaurante'}
+
+            </div>
+
+            <div class="items">
+
+                ${
+                    (p.items || []).map(i => `
+
+                    <div class="item">
+
+                        <span>
+                            ${i.quantity} ×
+                            ${escapar(
+                                i.product_name
+                            )}
+                        </span>
+
+                        <strong>
+                            $${(
+                                Number(i.unit_price) *
+                                Number(i.quantity)
+                            ).toFixed(2)}
+                        </strong>
+
+                    </div>
+
+                    `).join('')
+                }
+
+            </div>
+
+            <div class="total">
+                Total:
+                $${Number(p.total).toFixed(2)}
+            </div>
+
+            <button
+                class="aceptar"
+                onclick="aceptarPedido(${p.id})"
+            >
+                🛵 Aceptar pedido
+            </button>
+
+        </div>
+
+    `).join('');
+
+}
+
+async function aceptarPedido(id){
+
+    if(!confirm(
+        '¿Quieres aceptar el pedido #' +
+        id +
+        '?'
+    )){
+
+        return;
+
+    }
+
+    try{
+
+        const respuesta =
+            await fetch(
+                '/api/delivery/orders/' +
+                id +
+                '/accept',
+                {
+                    method:'POST',
+
+                    headers:{
+                        'Authorization':
+                            'Bearer ' + token()
+                    }
+                }
+            );
+
+        const datos =
+            await respuesta.json();
+
+        if(!respuesta.ok){
+
+            throw new Error(
+                datos.error ||
+                'No se pudo aceptar el pedido.'
+            );
+
+        }
+
+        seguimientoActivo=id;
+        if(ultimaUbicacion)enviarUbicacion(id,{coords:ultimaUbicacion});
+
+        alert(
+            '✅ Pedido #' +
+            id +
+            ' aceptado correctamente.'
+        );
+
+        cargar();
+
+    }catch(error){
+
+        alert(
+            '❌ ' +
+            error.message
+        );
+
+        cargar();
+
+    }
+
+}
+
+async function cargarMisPedidos(){
+
+    const respuesta =
+        await fetch(
+            '/api/delivery/orders/my',
+            {
+                headers:{
+                    'Authorization':
+                        'Bearer ' + token()
+                }
+            }
+        );
+
+    const datos =
+        await respuesta.json();
+
+    if(!respuesta.ok){
+
+        throw new Error(
+            datos.error ||
+            'No se pudieron cargar tus entregas.'
+        );
+
+    }
+
+    const contenedor =
+        document.getElementById(
+            'misPedidos'
+        );
+
+    if(!datos.length){
+
+        contenedor.innerHTML = `
+            <div class="vacio">
+                🛵 Todavía no tienes entregas.
+            </div>
+        `;
+
+        return;
+
+    }
+
+    contenedor.innerHTML =
+        datos.map(p => `
+
+        <div class="pedido">
+
+            <h3>
+                📦 Pedido #${p.id}
+            </h3>
+
+            <div class="info">
+
+                🍽️ Restaurante:
+                ${escapar(
+                    p.restaurant_name
+                )}
+
+                <br>
+
+                📍 Recoger en:
+                ${escapar(
+                    p.restaurant_address ||
+                    'Sin dirección'
+                )}
+
+                <br>
+
+                🏠 Entregar en:
+                ${escapar(
+                    p.address
+                )}
+
+                <br>
+
+                👤 Cliente:
+                ${escapar(
+                    p.customer_name
+                )}
+
+                <br>
+
+                📞 ${escapar(
+                    p.customer_phone ||
+                    'Sin teléfono'
+                )}
+
+            </div>
+
+            <div class="total">
+                $${Number(
+                    p.total
+                ).toFixed(2)}
+            </div>
+
+            ${p.status === 'delivering' ? `
+                <div class="acciones-mapa">
+                    <button class="compartir" disabled style="opacity:.9">
+                        🟢 Ubicación automática
+                    </button>
+                    <button class="ruta" onclick="mostrarRutaInterna(${p.id},${p.delivery_latitude==null?'null':Number(p.delivery_latitude)},${p.delivery_longitude==null?'null':Number(p.delivery_longitude)})">🧭 Ver ruta aquí</button>
+                </div>
+                <div id="estadoUbicacion-${p.id}" class="ubicacion-activa"></div>
+                <div id="mapaEntrega-${p.id}" class="mapa-entrega"></div>
+                <div id="indicaciones-${p.id}" style="display:none;background:#f7f7f7;border-radius:12px;padding:13px;margin-top:10px;line-height:1.5"></div>
+            ` : ''}
+
+         ${
+    p.status === 'delivered'
+
+    ? `
+        <div style="
+            background:#e8f5e9;
+            color:#1b5e20;
+            padding:14px;
+            border-radius:10px;
+            text-align:center;
+            font-weight:bold;
+            margin-top:10px;
+        ">
+            🔒 Pedido entregado
+            <br>
+            <small>
+                Este pedido ya no puede modificarse.
+            </small>
+        </div>
+    `
+
+    : p.status === 'ready'
+      ? `<button class="aceptar" onclick="cambiarEstado(${p.id},'delivering')">📦 Confirmar que recogí el pedido</button>`
+      : `<button class="aceptar" style="background:#16a34a" onclick="cambiarEstado(${p.id},'delivered')">✅ Confirmar entrega al cliente</button>`
+}   
+        </div>
+
+    `).join('');
+
+    if(seguimientoActivo && ultimaUbicacion){
+        mostrarMapaRepartidor(seguimientoActivo,ultimaUbicacion);
+        if(destinoActivo)dibujarRuta(ultimaUbicacion,destinoActivo,false);
+    }
+
+    const entregaEnCurso=datos.find(p=>p.delivery_status==='accepted'&&['ready','delivering'].includes(p.status));
+    if(entregaEnCurso&&!seguimientoActivo)seguimientoActivo=entregaEnCurso.id;
+
+}
+
+function compartirUbicacion(orderId){
+    if(!navigator.geolocation){
+        alert('Este dispositivo no permite obtener la ubicación.');
+        return;
+    }
+
+    seguimientoActivo=orderId;
+    const estado=document.getElementById('estadoUbicacion-'+orderId);
+    if(estado) estado.textContent='Solicitando permiso de ubicación…';
+
+    if(ultimaUbicacion)enviarUbicacion(orderId,{coords:ultimaUbicacion});
+}
+
+function iniciarUbicacionPermanente(){
+    if(!navigator.geolocation)return;
+    if(relojUbicacion!==null)return;
+    relojUbicacion=navigator.geolocation.watchPosition(async posicion=>{
+        ultimaUbicacion={latitude:posicion.coords.latitude,longitude:posicion.coords.longitude,accuracy:posicion.coords.accuracy};
+        try{await fetch('/api/delivery/location',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token()},body:JSON.stringify(ultimaUbicacion)});}catch(error){}
+        if(seguimientoActivo)enviarUbicacion(seguimientoActivo,posicion);
+    },error=>{
+        const mensaje=error.code===1?'Permite la ubicación para recibir pedidos cercanos.':'No fue posible actualizar tu ubicación.';
+        document.getElementById('error').innerHTML='<div class="error">📍 '+mensaje+'</div>';
+    },{enableHighAccuracy:true,maximumAge:5000,timeout:15000});
+}
+
+async function enviarUbicacion(orderId,posicion){
+    ultimaUbicacion={
+        latitude:posicion.coords.latitude,
+        longitude:posicion.coords.longitude,
+        accuracy:posicion.coords.accuracy
+    };
+
+    try{
+        const respuesta=await fetch('/api/delivery/orders/'+orderId+'/location',{
+            method:'PATCH',
+            headers:{
+                'Content-Type':'application/json',
+                'Authorization':'Bearer '+token()
+            },
+            body:JSON.stringify(ultimaUbicacion)
+        });
+        const datos=await respuesta.json();
+        if(!respuesta.ok) throw new Error(datos.error||'No se pudo compartir la ubicación.');
+
+        const estado=document.getElementById('estadoUbicacion-'+orderId);
+        if(estado) estado.textContent='🟢 Ubicación compartida con el cliente';
+        mostrarMapaRepartidor(orderId,ultimaUbicacion);
+        if(destinoActivo)dibujarRuta(ultimaUbicacion,destinoActivo,false);
+    }catch(error){
+        const estado=document.getElementById('estadoUbicacion-'+orderId);
+        if(estado) estado.textContent='⚠️ '+error.message;
+    }
+}
+
+function mostrarMapaRepartidor(orderId,ubicacion){
+    const contenedor=document.getElementById('mapaEntrega-'+orderId);
+    if(!contenedor||typeof L==='undefined') return;
+    contenedor.style.display='block';
+
+    if(!mapaEntrega||mapaEntrega.getContainer()!==contenedor){
+        mapaEntrega=L.map(contenedor).setView([ubicacion.latitude,ubicacion.longitude],16);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+            maxZoom:19,
+            attribution:'© OpenStreetMap'
+        }).addTo(mapaEntrega);
+        marcadorEntrega=L.marker([ubicacion.latitude,ubicacion.longitude])
+            .addTo(mapaEntrega).bindPopup('Tu ubicación actual').openPopup();
+    }else{
+        marcadorEntrega.setLatLng([ubicacion.latitude,ubicacion.longitude]);
+        mapaEntrega.setView([ubicacion.latitude,ubicacion.longitude]);
+    }
+    setTimeout(()=>mapaEntrega.invalidateSize(),50);
+}
+
+function mostrarRutaInterna(orderId,latitudDestino,longitudDestino){
+    if(latitudDestino===null||longitudDestino===null||!Number.isFinite(latitudDestino)||!Number.isFinite(longitudDestino)){
+        alert('Este pedido no tiene una ubicación de entrega válida.');return;
+    }
+    destinoActivo={latitude:latitudDestino,longitude:longitudDestino};
+    if(!ultimaUbicacion){
+        compartirUbicacion(orderId);
+        const estado=document.getElementById('estadoUbicacion-'+orderId);
+        if(estado)estado.textContent='Obteniendo tu ubicación para calcular la ruta…';
+        return;
+    }
+    mostrarMapaRepartidor(orderId,ultimaUbicacion);
+    dibujarRuta(ultimaUbicacion,destinoActivo,true);
+}
+
+async function dibujarRuta(origen,destino,forzar=false){
+    if(!mapaEntrega)return;
+    if(!forzar&&lineaRuta&&Date.now()-ultimaConsultaRuta<20000)return;
+    ultimaConsultaRuta=Date.now();
+    if(marcadorDestino)marcadorDestino.remove();
+    marcadorDestino=L.marker([destino.latitude,destino.longitude]).addTo(mapaEntrega).bindPopup('🏠 Entrega');
+    if(lineaRuta)lineaRuta.remove();
+    const indicaciones=document.getElementById('indicaciones-'+seguimientoActivo);
+    try{
+        const url=`https://router.project-osrm.org/route/v1/driving/${origen.longitude},${origen.latitude};${destino.longitude},${destino.latitude}?overview=full&geometries=geojson&steps=true`;
+        const respuesta=await fetch(url);const datos=await respuesta.json();
+        if(!respuesta.ok||!datos.routes?.[0])throw new Error('No se encontró una ruta vial');
+        const ruta=datos.routes[0];
+        const puntos=ruta.geometry.coordinates.map(punto=>[punto[1],punto[0]]);
+        lineaRuta=L.polyline(puntos,{color:'#e85d04',weight:6,opacity:.88}).addTo(mapaEntrega);
+        mapaEntrega.fitBounds(lineaRuta.getBounds(),{padding:[25,25]});
+        const km=(ruta.distance/1000).toFixed(1),minutos=Math.max(1,Math.round(ruta.duration/60));
+        const estado=document.getElementById('estadoUbicacion-'+seguimientoActivo);
+        if(estado)estado.textContent=`🧭 Ruta por calles · ${km} km · ${minutos} min aprox.`;
+        const pasos=ruta.legs.flatMap(leg=>leg.steps).filter(paso=>paso.name).slice(0,6);
+        if(indicaciones){indicaciones.style.display='block';indicaciones.innerHTML='<strong>Próximas calles</strong>'+pasos.map((paso,i)=>`<div style="margin-top:6px">${i+1}. ${textoManiobra(paso.maneuver?.type)} <strong>${escapar(paso.name)}</strong></div>`).join('');}
+    }catch(error){
+        lineaRuta=L.polyline([[origen.latitude,origen.longitude],[destino.latitude,destino.longitude]],{color:'#e85d04',weight:4,dashArray:'8 8'}).addTo(mapaEntrega);
+        mapaEntrega.fitBounds(lineaRuta.getBounds(),{padding:[25,25]});
+        if(indicaciones){indicaciones.style.display='block';indicaciones.textContent='⚠️ No fue posible calcular las calles. Se muestra la dirección aproximada.';}
+    }
+}
+
+function textoManiobra(tipo){return tipo==='depart'?'Inicia por':tipo==='arrive'?'Llega por':tipo==='turn'?'Continúa por':tipo==='roundabout'?'Toma la glorieta hacia':'Sigue por';}
+
+async function cambiarEstado(
+    id,
+    estado
+){
+
+    try{
+
+        const respuesta =
+            await fetch(
+                '/api/delivery/orders/' +
+                id,
+                {
+                    method:'PATCH',
+
+                    headers:{
+                        'Content-Type':
+                            'application/json',
+
+                        'Authorization':
+                            'Bearer ' + token()
+                    },
+
+                    body:JSON.stringify({
+                        status:estado
+                    })
+                }
+            );
+
+        const datos =
+            await respuesta.json();
+
+        if(!respuesta.ok){
+
+            throw new Error(
+                datos.error ||
+                'No se pudo actualizar.'
+            );
+
+        }
+
+        if(estado==='delivered'&&seguimientoActivo===id){
+            seguimientoActivo=null;
+        }
+
+        cargar();
+
+    }catch(error){
+
+        alert(
+            '❌ ' +
+            error.message
+        );
+
+        cargar();
+
+    }
+
+}
+
+function cerrarSesion(){
+
+    sessionStorage.removeItem(
+        'cs_token'
+    );
+
+    sessionStorage.removeItem(
+        'cs_user'
+    );
+
+    location.href =
+        '/home3.html';
+
+}
+
+function escapar(valor){
+
+    return String(
+        valor ?? ''
+    )
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+
+}
+
+function mostrarError(mensaje){
+
+    document.getElementById(
+        'error'
+    ).innerHTML = `
+        <div class="error">
+            ❌ ${escapar(mensaje)}
+        </div>
+    `;
+
+}
+
+if(comprobarAcceso()){
+
+    iniciarUbicacionPermanente();
+    cargar();
+
+    setInterval(
+        cargar,
+        10000
+    );
+
+}
+
+</script>
+
+<script src="/pwa-install.js" defer></script></body>
+</html>
