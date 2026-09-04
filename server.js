@@ -219,6 +219,7 @@ const canUseOrder=(user,orderId)=>{
     if(user.role==='delivery')return Boolean(db.prepare('SELECT order_id FROM delivery_assignments WHERE order_id=? AND delivery_user_id=?').get(orderId,user.id));
     return false;
 };
+const issueTypes=['missing_product','wrong_order','delayed','customer_unavailable','restaurant_closed','cancellation','help'];
 
 app.get('/api/feedback/orders',auth,role(['customer','restaurant','delivery']),(req,res)=>{
     let rows=[];
@@ -280,6 +281,29 @@ app.patch('/api/admin/feedback/:id',auth,role(['admin']),(req,res)=>{
     if(result.changes!==1)return res.status(404).json({error:'Opinión no encontrada'});
     audit(req,'feedback_updated','feedback',id);res.json({ok:true,status,severity});
 });
+
+app.post('/api/order-issues',auth,role(['customer','restaurant','delivery']),rateLimit('order-issue',20,60*60*1000),(req,res)=>{
+    const orderId=Number(req.body.orderId),issueType=String(req.body.issueType||''),description=String(req.body.description||'').trim().slice(0,1000);
+    if(!Number.isInteger(orderId)||orderId<=0||!issueTypes.includes(issueType))return res.status(400).json({error:'Selecciona un pedido y un tipo de problema'});
+    if(!canUseOrder(req.user,orderId))return res.status(403).json({error:'No puedes reportar problemas de ese pedido'});
+    const result=db.prepare('INSERT INTO order_issues(order_id,reporter_user_id,reporter_role,issue_type,description) VALUES(?,?,?,?,?)').run(orderId,req.user.id,req.user.role,issueType,description);
+    audit(req,'order_issue_created','order_issue',Number(result.lastInsertRowid));res.status(201).json({id:Number(result.lastInsertRowid),status:'open'});
+});
+app.get('/api/order-issues/my',auth,role(['customer','restaurant','delivery']),(req,res)=>res.json(db.prepare('SELECT id,order_id,issue_type,description,status,created_at,updated_at FROM order_issues WHERE reporter_user_id=? ORDER BY id DESC').all(req.user.id)));
+app.get('/api/admin/order-issues',auth,role(['admin']),(req,res)=>res.json(db.prepare(`SELECT i.*,u.name reporter_name FROM order_issues i LEFT JOIN users u ON u.id=i.reporter_user_id ORDER BY CASE i.status WHEN 'open' THEN 1 WHEN 'reviewing' THEN 2 ELSE 3 END,i.created_at DESC`).all()));
+app.patch('/api/admin/order-issues/:id',auth,role(['admin']),(req,res)=>{const id=Number(req.params.id),status=String(req.body.status||''),notes=String(req.body.adminNotes||'').trim().slice(0,1000);if(!Number.isInteger(id)||!['open','reviewing','resolved'].includes(status))return res.status(400).json({error:'Estado inválido'});const result=db.prepare('UPDATE order_issues SET status=?,admin_notes=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(status,notes,id);if(result.changes!==1)return res.status(404).json({error:'Reporte no encontrado'});audit(req,'order_issue_updated','order_issue',id);res.json({ok:true,status});});
+
+app.post('/api/admin/demo/create',auth,role(['admin']),rateLimit('demo-create',10,60*60*1000),(req,res)=>{
+    const restaurant=db.prepare("SELECT r.id,r.prep_minutes,p.id product_id,p.name product_name,p.price FROM restaurants r JOIN products p ON p.restaurant_id=r.id AND p.available=1 WHERE r.active=1 ORDER BY r.id,p.id LIMIT 1").get();
+    if(!restaurant)return res.status(409).json({error:'Necesitas al menos un restaurante activo con un producto disponible'});
+    let customer=db.prepare("SELECT id FROM users WHERE email='demo-cliente@come-sayula.local'").get();
+    if(!customer){const created=db.prepare("INSERT INTO users(name,email,phone,password_hash,role,account_status,email_verified) VALUES('Cliente demostración','demo-cliente@come-sayula.local','',?,'customer','approved',1)").run(bcrypt.hashSync(crypto.randomBytes(18).toString('hex'),10));customer={id:Number(created.lastInsertRowid)};}
+    const orderId=db.transaction(()=>{const o=db.prepare("INSERT INTO orders(customer_id,restaurant_id,address,payment_method,total,status,subtotal,delivery_fee,payment_status,client_request_id,estimated_prep_minutes,is_demo) VALUES(?,?,?,'Efectivo',?,'received',?,35,'pay_on_delivery',?,?,1)").run(customer.id,restaurant.id,'Pedido de demostración · Plaza principal',Number(restaurant.price)+35,restaurant.price,'demo-'+crypto.randomUUID(),restaurant.prep_minutes||30);const id=Number(o.lastInsertRowid);db.prepare('INSERT INTO order_items(order_id,product_id,product_name,unit_price,quantity) VALUES(?,?,?,?,1)').run(id,restaurant.product_id,restaurant.product_name,restaurant.price);recordOrderStatus(id,null,'received',req.user,'Pedido de demostración creado');return id;})();
+    audit(req,'demo_order_created','order',orderId);res.status(201).json({orderId,status:'received'});
+});
+app.post('/api/admin/demo/:id/advance',auth,role(['admin']),(req,res)=>{const id=Number(req.params.id),order=db.prepare('SELECT id,status FROM orders WHERE id=? AND is_demo=1').get(id);if(!order)return res.status(404).json({error:'Pedido de demostración no encontrado'});const next={received:'accepted',accepted:'preparing',preparing:'ready',ready:'assigned',assigned:'delivering',delivering:'delivered'}[order.status];if(!next)return res.status(409).json({error:'La demostración ya terminó'});db.transaction(()=>{if(next==='assigned'){const courier=db.prepare("SELECT id FROM users WHERE role='delivery' AND account_status='approved' ORDER BY id LIMIT 1").get();if(!courier)throw new Error('Necesitas un repartidor aprobado');db.prepare("INSERT INTO delivery_assignments(order_id,delivery_user_id,status,accepted_at) VALUES(?,?,'accepted',CURRENT_TIMESTAMP)").run(id,courier.id);}db.prepare('UPDATE orders SET status=?,payment_status=CASE WHEN ?=\'delivered\' THEN \'paid\' ELSE payment_status END WHERE id=? AND status=?').run(next,next,id,order.status);if(next==='delivered')db.prepare("UPDATE delivery_assignments SET status='delivered',delivered_at=CURRENT_TIMESTAMP WHERE order_id=?").run(id);recordOrderStatus(id,order.status,next,req.user,'Simulación administrativa');})();audit(req,'demo_order_advanced','order',id);res.json({ok:true,status:next});});
+app.get('/api/admin/demo',auth,role(['admin']),(req,res)=>res.json(db.prepare("SELECT o.id,o.status,o.total,o.created_at,r.name restaurant_name FROM orders o JOIN restaurants r ON r.id=o.restaurant_id WHERE o.is_demo=1 ORDER BY o.id DESC").all()));
+app.delete('/api/admin/demo',auth,role(['admin']),(req,res)=>{const ids=db.prepare('SELECT id FROM orders WHERE is_demo=1').all().map(x=>x.id);const removed=db.transaction(()=>{for(const id of ids){db.prepare('DELETE FROM order_issues WHERE order_id=?').run(id);db.prepare('DELETE FROM order_reviews WHERE order_id=?').run(id);db.prepare('DELETE FROM delivery_assignments WHERE order_id=?').run(id);db.prepare('DELETE FROM order_status_history WHERE order_id=?').run(id);db.prepare('DELETE FROM orders WHERE id=? AND is_demo=1').run(id);}return ids.length;})();audit(req,'demo_orders_reset','order',null);res.json({ok:true,removed});});
 app.get('/api/restaurants',(req,res)=>{const registrados=db.prepare(`SELECT r.id,r.name,r.description,r.address,r.phone,r.image,r.category,r.priority,r.featured,r.operational_status,r.prep_minutes,r.special_hours,
     ROUND(AVG(rv.restaurant_rating),1) AS rating,COUNT(rv.id) AS ratingCount,
     'registered' AS listingType,'Verificado' AS verificationStatus,NULL AS sourceUrl

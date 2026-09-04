@@ -92,6 +92,7 @@ ensureColumn('orders','distance_km','REAL');
 ensureColumn('orders','payment_status',"TEXT NOT NULL DEFAULT 'pending'");
 ensureColumn('orders','client_request_id','TEXT');
 ensureColumn('orders','estimated_prep_minutes','INTEGER');
+ensureColumn('orders','is_demo','INTEGER NOT NULL DEFAULT 0');
 
 db.exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_customer_request
@@ -140,6 +141,21 @@ CREATE INDEX IF NOT EXISTS idx_feedback_admin ON feedback_reports(status,severit
 CREATE INDEX IF NOT EXISTS idx_feedback_group ON feedback_reports(group_key,created_at);
 CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback_reports(user_id,created_at);
 CREATE INDEX IF NOT EXISTS idx_order_status_history ON order_status_history(order_id,created_at);
+CREATE TABLE IF NOT EXISTS order_issues(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL,
+    reporter_user_id INTEGER,
+    reporter_role TEXT NOT NULL,
+    issue_type TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    admin_notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY(reporter_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_order_issues_admin ON order_issues(status,issue_type,created_at);
 `);
 
 module.exports = db;
