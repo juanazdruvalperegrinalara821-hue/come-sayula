@@ -83,6 +83,7 @@ async function actualizarSeguimiento(){
                 ${p.delivery_pin?'<div style="margin-top:12px;background:#fff3cd;padding:12px;border-radius:10px"><strong>🔐 Código de entrega: <span style="font-size:24px;letter-spacing:5px">'+p.delivery_pin+'</span></strong><br><small>Díselo al repartidor únicamente cuando recibas tu pedido.</small></div>':''}
             </div>
             <div class="actualizacion">${mensajeUbicacion(p,tieneUbicacion)}</div>
+            ${p.status==='received'&&p.responseDeadline?`<div class="actualizacion">⏳ Esperando confirmación del restaurante.</div><button style="display:${Date.now()>=new Date(p.responseDeadline).getTime()?'block':'none'};width:100%;padding:12px;border:0;border-radius:10px;background:#a61b1b;color:white;font-weight:bold" onclick="cancelarSinRespuesta(${p.id})">Cancelar sin penalización</button>`:''}
             ${finalizado?panelFinal(p):`<div id="resumenRuta" class="actualizacion"></div><div id="mapa"><div class="espera">${tieneUbicacion?'Cargando mapa…':'El mapa aparecerá cuando el repartidor comparta su ubicación.'}</div></div>`}`;
         if(!finalizado&&tieneUbicacion) pintarMapa(Number(p.latitude),Number(p.longitude),p.delivery_name,p.delivery_latitude==null?null:Number(p.delivery_latitude),p.delivery_longitude==null?null:Number(p.delivery_longitude));
         if(finalizado){clearInterval(temporizador);temporizador=null;}
@@ -99,6 +100,7 @@ function panelFinal(p){
 }
 
 function elegirPropina(monto){document.getElementById('propinaPedido').value=monto;}
+async function cancelarSinRespuesta(id){if(!await confirm('El restaurante no respondió a tiempo. ¿Deseas cancelar sin penalización?'))return;try{const respuesta=await fetch('/api/orders/'+id+'/cancel-no-response',{method:'POST',headers:{Authorization:'Bearer '+token}}),datos=await respuesta.json();if(!respuesta.ok)throw new Error(datos.error||'No fue posible cancelar');await cargarPedidos()}catch(error){alert('❌ '+error.message)}}
 async function enviarResena(event,id){event.preventDefault();const button=event.currentTarget.querySelector('button[type="submit"],.enviar-resena');button.disabled=true;try{const respuesta=await fetch('/api/orders/'+id+'/review',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({restaurantRating:Number(document.getElementById('calificacionRestaurante').value),deliveryRating:document.getElementById('calificacionRepartidor')?.value||null,tipAmount:Number(document.getElementById('propinaPedido').value||0),comment:document.getElementById('comentarioResena').value})});const datos=await respuesta.json();if(!respuesta.ok)throw new Error(datos.error||'No fue posible guardar');await actualizarSeguimiento();await cargarPedidos();}catch(error){document.getElementById('errorResena').textContent='❌ '+error.message;button.disabled=false;}}
 
 function mensajeUbicacion(p,tiene){
