@@ -156,7 +156,15 @@ CREATE TABLE IF NOT EXISTS order_issues(
     FOREIGN KEY(reporter_user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_order_issues_admin ON order_issues(status,issue_type,created_at);
+CREATE TABLE IF NOT EXISTS delivery_zones(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,city TEXT NOT NULL DEFAULT 'Sayula',min_distance_km REAL NOT NULL DEFAULT 0,max_distance_km REAL NOT NULL,base_fee REAL NOT NULL,surcharge_per_km REAL NOT NULL DEFAULT 0,minimum_order REAL NOT NULL DEFAULT 0,available INTEGER NOT NULL DEFAULT 1,priority INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS delivery_profiles(delivery_user_id INTEGER PRIMARY KEY,status TEXT NOT NULL DEFAULT 'offline',updated_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(delivery_user_id) REFERENCES users(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS delivery_rejections(order_id INTEGER NOT NULL,delivery_user_id INTEGER NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(order_id,delivery_user_id),FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE,FOREIGN KEY(delivery_user_id) REFERENCES users(id) ON DELETE CASCADE);
 `);
+
+if(!db.prepare('SELECT id FROM delivery_zones LIMIT 1').get()){
+    db.prepare("INSERT INTO delivery_zones(name,city,min_distance_km,max_distance_km,base_fee,surcharge_per_km,minimum_order,available,priority) VALUES('Zona centro','Sayula',0,3,35,0,0,1,10)").run();
+    db.prepare("INSERT INTO delivery_zones(name,city,min_distance_km,max_distance_km,base_fee,surcharge_per_km,minimum_order,available,priority) VALUES('Zona extendida','Sayula',3,15,35,6,0,1,5)").run();
+}
 
 module.exports = db;
 

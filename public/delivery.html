@@ -192,6 +192,7 @@ select{
 <div class="container">
 
     <div id="error"></div>
+    <section class="seccion"><h2>Mi disponibilidad</h2><div style="display:flex;gap:10px;flex-wrap:wrap"><button class="aceptar" onclick="cambiarDisponibilidadRepartidor('available')">🟢 Disponible</button><button class="aceptar" style="background:#555" onclick="cambiarDisponibilidadRepartidor('offline')">⚫ Desconectado</button></div><p id="estadoDisponibilidad">Consultando estado…</p></section>
 
     <section class="seccion">
 
@@ -439,6 +440,7 @@ async function cargarDisponibles(){
             >
                 🛵 Aceptar pedido
             </button>
+            <button class="aceptar" style="background:#666" onclick="rechazarPedido(${p.id})">No puedo tomarlo</button>
 
         </div>
 
@@ -658,6 +660,10 @@ async function cargarMisPedidos(){
     if(entregaEnCurso&&!seguimientoActivo)seguimientoActivo=entregaEnCurso.id;
 
 }
+
+async function cambiarDisponibilidadRepartidor(status){try{const r=await fetch('/api/delivery/availability',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token()},body:JSON.stringify({status})}),d=await r.json();if(!r.ok)throw new Error(d.error||'No fue posible cambiar el estado');estadoDisponibilidad.textContent=status==='available'?'🟢 Estás disponible para recibir pedidos':'⚫ Estás desconectado';cargar()}catch(e){alert('❌ '+e.message)}}
+async function cargarDisponibilidadRepartidor(){try{const r=await fetch('/api/delivery/availability',{headers:{Authorization:'Bearer '+token()}}),d=await r.json();estadoDisponibilidad.textContent=d.status==='available'?'🟢 Estás disponible para recibir pedidos':d.status==='busy'?'🟠 Estás ocupado con una entrega':'⚫ Estás desconectado'}catch(e){}}
+async function rechazarPedido(id){try{await fetch('/api/delivery/orders/'+id+'/reject',{method:'POST',headers:{Authorization:'Bearer '+token()}});cargar()}catch(e){}}
 
 function compartirUbicacion(orderId){
     if(!navigator.geolocation){
@@ -886,6 +892,7 @@ function mostrarError(mensaje){
 if(comprobarAcceso()){
 
     iniciarUbicacionPermanente();
+    cargarDisponibilidadRepartidor();
     cargar();
 
     setInterval(

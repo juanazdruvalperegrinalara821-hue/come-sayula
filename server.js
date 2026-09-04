@@ -205,6 +205,12 @@ app.patch('/api/admin/restaurants/:id/visibility',auth,role(['admin']),(req,res)
     if(result.changes!==1)return res.status(404).json({error:'Restaurante no encontrado'});
     audit(req,'restaurant_visibility_updated','restaurant',id);res.json({ok:true,category,priority,featured:Boolean(featured)});
 });
+app.get('/api/admin/delivery-zones',auth,role(['admin']),(req,res)=>res.json(db.prepare('SELECT * FROM delivery_zones ORDER BY priority DESC,max_distance_km').all()));
+app.post('/api/admin/delivery-zones',auth,role(['admin']),(req,res)=>{const name=String(req.body.name||'').trim().slice(0,80),city=String(req.body.city||'Sayula').trim().slice(0,80),min=Number(req.body.minDistanceKm),max=Number(req.body.maxDistanceKm),base=Number(req.body.baseFee),surcharge=Number(req.body.surchargePerKm||0),minimum=Number(req.body.minimumOrder||0);if(!name||![min,max,base,surcharge,minimum].every(Number.isFinite)||min<0||max<=min||base<0||surcharge<0||minimum<0)return res.status(400).json({error:'Datos de zona inválidos'});const result=db.prepare('INSERT INTO delivery_zones(name,city,min_distance_km,max_distance_km,base_fee,surcharge_per_km,minimum_order,available,priority) VALUES(?,?,?,?,?,?,?,?,?)').run(name,city,min,max,base,surcharge,minimum,req.body.available===false?0:1,Number(req.body.priority)||0);audit(req,'delivery_zone_created','delivery_zone',Number(result.lastInsertRowid));res.status(201).json({id:Number(result.lastInsertRowid)});});
+app.patch('/api/admin/delivery-zones/:id',auth,role(['admin']),(req,res)=>{const id=Number(req.params.id),name=String(req.body.name||'').trim().slice(0,80),city=String(req.body.city||'Sayula').trim().slice(0,80),min=Number(req.body.minDistanceKm),max=Number(req.body.maxDistanceKm),base=Number(req.body.baseFee),surcharge=Number(req.body.surchargePerKm||0),minimum=Number(req.body.minimumOrder||0);if(!Number.isInteger(id)||!name||![min,max,base,surcharge,minimum].every(Number.isFinite)||min<0||max<=min||base<0||surcharge<0||minimum<0)return res.status(400).json({error:'Datos de zona inválidos'});const result=db.prepare('UPDATE delivery_zones SET name=?,city=?,min_distance_km=?,max_distance_km=?,base_fee=?,surcharge_per_km=?,minimum_order=?,available=?,priority=? WHERE id=?').run(name,city,min,max,base,surcharge,minimum,req.body.available?1:0,Number(req.body.priority)||0,id);if(result.changes!==1)return res.status(404).json({error:'Zona no encontrada'});audit(req,'delivery_zone_updated','delivery_zone',id);res.json({ok:true});});
+app.get('/api/admin/delivery-couriers',auth,role(['admin']),(req,res)=>res.json(db.prepare("SELECT u.id,u.name,u.phone,COALESCE(dp.status,'offline') status,(SELECT COUNT(*) FROM delivery_assignments da JOIN orders o ON o.id=da.order_id WHERE da.delivery_user_id=u.id AND da.status='accepted' AND o.status IN ('assigned','delivering')) active_orders FROM users u LEFT JOIN delivery_profiles dp ON dp.delivery_user_id=u.id WHERE u.role='delivery' AND u.account_status='approved' ORDER BY status,name").all()));
+app.get('/api/admin/delivery-ready-orders',auth,role(['admin']),(req,res)=>res.json(db.prepare("SELECT o.id,o.total,r.name restaurant_name FROM orders o JOIN restaurants r ON r.id=o.restaurant_id WHERE o.status='ready' ORDER BY o.id").all()));
+app.post('/api/admin/orders/:id/assign',auth,role(['admin']),(req,res)=>{const orderId=Number(req.params.id),courierId=Number(req.body.deliveryUserId);const order=db.prepare("SELECT id,status FROM orders WHERE id=?").get(orderId),courier=db.prepare("SELECT u.id,COALESCE(dp.status,'offline') status FROM users u LEFT JOIN delivery_profiles dp ON dp.delivery_user_id=u.id WHERE u.id=? AND u.role='delivery' AND u.account_status='approved'").get(courierId);if(!order||order.status!=='ready')return res.status(409).json({error:'El pedido no está listo para asignación'});if(!courier||courier.status!=='available')return res.status(409).json({error:'El repartidor no está disponible'});try{db.transaction(()=>{db.prepare("INSERT INTO delivery_assignments(order_id,delivery_user_id,status,accepted_at) VALUES(?,?,'accepted',CURRENT_TIMESTAMP)").run(orderId,courierId);db.prepare("UPDATE orders SET status='assigned' WHERE id=? AND status='ready'").run(orderId);db.prepare("UPDATE delivery_profiles SET status='busy',updated_at=CURRENT_TIMESTAMP WHERE delivery_user_id=?").run(courierId);recordOrderStatus(orderId,'ready','assigned',req.user,'Asignación manual administrativa');})();audit(req,'admin_delivery_assigned','order',orderId);res.json({ok:true,status:'assigned'});}catch(e){res.status(409).json({error:'El pedido ya fue asignado'});}});
 
 const feedbackLabels={error:'Error',suggestion:'Sugerencia',complaint:'Inconformidad',praise:'Felicitación'};
 const feedbackStatuses=['received','reviewing','accepted','resolved'];
@@ -314,16 +320,18 @@ app.get('/api/restaurants',(req,res)=>{const registrados=db.prepare(`SELECT r.id
 app.get('/api/restaurants/:id/menu',(req,res)=>{const id=String(req.params.id);if(id.startsWith('directory-')){const directoryId=Number(id.replace('directory-',''));const r=db.prepare('SELECT id,name,category,description,address,phone,hours,source_url,verification_status FROM directory_entries WHERE id=? AND active=1').get(directoryId);if(!r)return res.status(404).json({error:'No encontrado'});return res.json({restaurant:{...r,id,listingType:'directory',sourceUrl:r.source_url,verificationStatus:r.verification_status},products:[]})}let r=db.prepare(`SELECT r.id,r.name,r.category,r.description,r.address,r.phone,r.image,r.operational_status,r.prep_minutes,r.special_hours,ROUND(AVG(rv.restaurant_rating),1) rating,COUNT(rv.id) ratingCount FROM restaurants r LEFT JOIN order_reviews rv ON rv.restaurant_id=r.id WHERE r.id=? AND r.active=1 GROUP BY r.id`).get(req.params.id);if(!r)return res.status(404).json({error:'No encontrado'});res.json({restaurant:{...r,estimatedPrepMinutes:Number(r.prep_minutes)+(r.operational_status==='saturated'?20:0),listingType:'registered',verificationStatus:'Verificado'},products:db.prepare('SELECT * FROM products WHERE restaurant_id=? AND available=1').all(r.id)})});
 const distanceKm=(lat1,lng1,lat2,lng2)=>{const rad=Math.PI/180;const a=Math.sin((lat2-lat1)*rad/2)**2+Math.cos(lat1*rad)*Math.cos(lat2*rad)*Math.sin((lng2-lng1)*rad/2)**2;return 6371*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));};
 const deliveryQuote=(restaurant,lat,lng)=>{
-    if(restaurant.latitude===null||restaurant.latitude===undefined||restaurant.longitude===null||restaurant.longitude===undefined||!Number.isFinite(Number(restaurant.latitude))||!Number.isFinite(Number(restaurant.longitude))){return {distanceKm:null,deliveryFee:35};}
+    if(restaurant.latitude===null||restaurant.latitude===undefined||restaurant.longitude===null||restaurant.longitude===undefined||!Number.isFinite(Number(restaurant.latitude))||!Number.isFinite(Number(restaurant.longitude))){return {distanceKm:null,deliveryFee:35,zoneName:'Tarifa base provisional'};}
     const distance=Math.round(distanceKm(Number(restaurant.latitude),Number(restaurant.longitude),lat,lng)*100)/100;
-    return {distanceKm:distance,deliveryFee:Math.round((35+Math.max(0,distance-3)*6)*100)/100};
+    const zone=db.prepare('SELECT * FROM delivery_zones WHERE available=1 AND ? >= min_distance_km AND ? <= max_distance_km ORDER BY priority DESC,max_distance_km LIMIT 1').get(distance,distance);
+    if(!zone)return {distanceKm:distance,unavailable:true};
+    return {distanceKm:distance,deliveryFee:Math.round((Number(zone.base_fee)+Math.max(0,distance-Number(zone.min_distance_km))*Number(zone.surcharge_per_km))*100)/100,zoneName:zone.name,minimumOrder:Number(zone.minimum_order)};
 };
 
 app.post('/api/delivery-quote',auth,role(['customer']),rateLimit('quote',60,60*1000),(req,res)=>{
     const lat=Number(req.body.deliveryLatitude),lng=Number(req.body.deliveryLongitude);
     const restaurant=db.prepare('SELECT id,latitude,longitude FROM restaurants WHERE id=? AND active=1').get(req.body.restaurantId);
     if(!restaurant||!Number.isFinite(lat)||lat < -90||lat > 90||!Number.isFinite(lng)||lng < -180||lng > 180)return res.status(400).json({error:'Datos de entrega inválidos'});
-    res.json(deliveryQuote(restaurant,lat,lng));
+    const quote=deliveryQuote(restaurant,lat,lng);if(quote.unavailable)return res.status(409).json({error:'La entrega no está disponible para esa ubicación',...quote});res.json(quote);
 });
 
 app.post('/api/orders',auth,role(['customer']),rateLimit('orders',12,10*60*1000),(req,res)=>{
@@ -344,12 +352,14 @@ app.post('/api/orders',auth,role(['customer']),rateLimit('orders',12,10*60*1000)
     for(const item of items){const product=getProduct.get(item.productId,restaurantId);const quantity=Number(item.quantity);if(!product||!product.available||!Number.isInteger(quantity)||quantity<1||quantity>30)return res.status(400).json({error:'Producto o cantidad inválida'});subtotal+=Number(product.price)*quantity;normalized.push({...product,quantity});}
     subtotal=Math.round(subtotal*100)/100;
     const quote=deliveryQuote(restaurant,lat,lng);
+    if(quote.unavailable)return res.status(409).json({error:'La entrega no está disponible para esa ubicación'});
+    if(subtotal<Number(quote.minimumOrder||0))return res.status(409).json({error:'El pedido mínimo para '+quote.zoneName+' es de $'+Number(quote.minimumOrder).toFixed(2)});
     const total=Math.round((subtotal+quote.deliveryFee)*100)/100;
     const paymentStatus=paymentMethod==='Transferencia'?'awaiting_confirmation':'pay_on_delivery';
     const estimatedPrepMinutes=Math.min(180,Math.max(5,Number(restaurant.prep_minutes)||30)+(restaurant.operational_status==='saturated'?20:0));
     const orderId=db.transaction(()=>{const order=db.prepare('INSERT INTO orders(customer_id,restaurant_id,address,payment_method,total,delivery_latitude,delivery_longitude,subtotal,delivery_fee,distance_km,payment_status,client_request_id,estimated_prep_minutes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)').run(req.user.id,restaurantId,String(address).trim().slice(0,500),paymentMethod,total,lat,lng,subtotal,quote.deliveryFee,quote.distanceKm,paymentStatus,clientRequestId,estimatedPrepMinutes);const id=Number(order.lastInsertRowid);const insert=db.prepare('INSERT INTO order_items(order_id,product_id,product_name,unit_price,quantity) VALUES(?,?,?,?,?)');normalized.forEach(item=>insert.run(id,item.id,item.name,item.price,item.quantity));recordOrderStatus(id,null,'received',req.user,'Pedido creado por el cliente');return id;})();
     audit(req,'order_created','order',orderId);
-    res.status(201).json({orderId,total,subtotal,deliveryFee:quote.deliveryFee,distanceKm:quote.distanceKm,paymentStatus,estimatedPrepMinutes});
+    res.status(201).json({orderId,total,subtotal,deliveryFee:quote.deliveryFee,distanceKm:quote.distanceKm,zoneName:quote.zoneName,paymentStatus,estimatedPrepMinutes});
 });
 app.get('/api/orders/my',auth,role(['customer']),(req,res)=>{let os=db.prepare(`SELECT o.*,r.name restaurant_name,rv.restaurant_rating,rv.delivery_rating,rv.comment review_comment,rv.tip_amount,rv.tip_method FROM orders o JOIN restaurants r ON r.id=o.restaurant_id LEFT JOIN order_reviews rv ON rv.order_id=o.id WHERE o.customer_id=? ORDER BY o.id DESC`).all(req.user.id);let it=db.prepare('SELECT * FROM order_items WHERE order_id=?');res.json(os.map(o=>({...o,responseDeadline:o.status==='received'?new Date(new Date(o.created_at+'Z').getTime()+ORDER_RESPONSE_MINUTES*60000).toISOString():null,items:it.all(o.id)})))});
 app.post('/api/orders/:id/cancel-no-response',auth,role(['customer']),(req,res)=>{const id=Number(req.params.id),order=db.prepare('SELECT id,status,created_at FROM orders WHERE id=? AND customer_id=?').get(id,req.user.id);if(!order)return res.status(404).json({error:'Pedido no encontrado'});if(order.status!=='received')return res.status(409).json({error:'El restaurante ya respondió o el pedido ya fue cerrado'});if(Date.now()-new Date(order.created_at+'Z').getTime()<ORDER_RESPONSE_MINUTES*60000)return res.status(409).json({error:'El tiempo de respuesta todavía no termina'});const changed=db.transaction(()=>{const result=db.prepare("UPDATE orders SET status='cancelled',payment_status=CASE WHEN payment_status='awaiting_confirmation' THEN 'cancelled' ELSE payment_status END WHERE id=? AND status='received'").run(id);if(result.changes===1)recordOrderStatus(id,'received','cancelled',req.user,'Cancelación sin penalización por falta de respuesta');return result;})();if(changed.changes!==1)return res.status(409).json({error:'El pedido cambió; actualiza la pantalla'});audit(req,'order_cancelled_no_response','order',id);res.json({ok:true,status:'cancelled'});});
@@ -579,8 +589,11 @@ app.put('/api/delivery/location',auth,role(['delivery']),rateLimit('delivery-loc
     db.prepare(`INSERT INTO delivery_locations(delivery_user_id,latitude,longitude,accuracy,updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP)
         ON CONFLICT(delivery_user_id) DO UPDATE SET latitude=excluded.latitude,longitude=excluded.longitude,accuracy=excluded.accuracy,updated_at=CURRENT_TIMESTAMP`)
         .run(req.user.id,latitude,longitude,accuracy);
+    db.prepare("INSERT INTO delivery_profiles(delivery_user_id,status,updated_at) VALUES(?,'available',CURRENT_TIMESTAMP) ON CONFLICT(delivery_user_id) DO UPDATE SET updated_at=CURRENT_TIMESTAMP").run(req.user.id);
     res.json({ok:true});
 });
+app.put('/api/delivery/availability',auth,role(['delivery']),(req,res)=>{const status=String(req.body.status||'');if(!['available','offline'].includes(status))return res.status(400).json({error:'Estado inválido'});const active=db.prepare("SELECT da.order_id FROM delivery_assignments da JOIN orders o ON o.id=da.order_id WHERE da.delivery_user_id=? AND da.status='accepted' AND o.status IN ('assigned','delivering')").get(req.user.id);if(active&&status==='offline')return res.status(409).json({error:'Termina tu entrega activa antes de desconectarte'});db.prepare('INSERT INTO delivery_profiles(delivery_user_id,status,updated_at) VALUES(?,?,CURRENT_TIMESTAMP) ON CONFLICT(delivery_user_id) DO UPDATE SET status=excluded.status,updated_at=CURRENT_TIMESTAMP').run(req.user.id,status);res.json({ok:true,status});});
+app.get('/api/delivery/availability',auth,role(['delivery']),(req,res)=>res.json(db.prepare("SELECT COALESCE((SELECT status FROM delivery_profiles WHERE delivery_user_id=?),'offline') status").get(req.user.id)));
 
 app.get('/api/delivery/orders/available',auth,role(['delivery']),(req,res)=>{
 
@@ -602,12 +615,14 @@ app.get('/api/delivery/orders/available',auth,role(['delivery']),(req,res)=>{
         LEFT JOIN delivery_assignments da
             ON da.order_id = o.id
         WHERE o.status = 'ready'
+        AND COALESCE((SELECT status FROM delivery_profiles WHERE delivery_user_id=?),'offline')='available'
+        AND NOT EXISTS(SELECT 1 FROM delivery_rejections dr WHERE dr.order_id=o.id AND dr.delivery_user_id=?)
         AND (
             da.id IS NULL
             OR da.status = 'available'
         )
         ORDER BY o.id ASC
-    `).all();
+    `).all(req.user.id,req.user.id);
 
     const items = db.prepare(`
         SELECT *
@@ -641,6 +656,7 @@ app.post('/api/delivery/orders/:id/accept',auth,role(['delivery']),(req,res)=>{
     try{
 
         const resultado = db.transaction(()=>{
+            const profile=db.prepare("SELECT status FROM delivery_profiles WHERE delivery_user_id=?").get(req.user.id);if(!profile||profile.status!=='available')throw new Error('Activa tu disponibilidad antes de aceptar pedidos');
 
             const active=db.prepare("SELECT da.order_id FROM delivery_assignments da JOIN orders o ON o.id=da.order_id WHERE da.delivery_user_id=? AND da.status='accepted' AND o.status IN ('assigned','delivering') AND da.order_id<>?").get(req.user.id,orderId);
             if(active)throw new Error('Termina tu entrega activa antes de aceptar otra');
@@ -705,6 +721,7 @@ app.post('/api/delivery/orders/:id/accept',auth,role(['delivery']),(req,res)=>{
             const statusChange=db.prepare("UPDATE orders SET status='assigned' WHERE id=? AND status='ready'").run(orderId);
             if(statusChange.changes!==1)throw new Error('El pedido cambió antes de asignarse');
             recordOrderStatus(orderId,'ready','assigned',req.user,'Repartidor asignado');
+            db.prepare("UPDATE delivery_profiles SET status='busy',updated_at=CURRENT_TIMESTAMP WHERE delivery_user_id=?").run(req.user.id);
 
             return db.prepare(`
                 SELECT *
@@ -729,6 +746,7 @@ app.post('/api/delivery/orders/:id/accept',auth,role(['delivery']),(req,res)=>{
     }
 
 });
+app.post('/api/delivery/orders/:id/reject',auth,role(['delivery']),(req,res)=>{const id=Number(req.params.id);if(!db.prepare("SELECT id FROM orders WHERE id=? AND status='ready'").get(id))return res.status(409).json({error:'El pedido ya no está disponible'});db.prepare('INSERT OR IGNORE INTO delivery_rejections(order_id,delivery_user_id) VALUES(?,?)').run(id,req.user.id);audit(req,'delivery_order_rejected','order',id);res.json({ok:true});});
 
 
 app.get('/api/delivery/orders/my',auth,role(['delivery']),(req,res)=>{
@@ -881,6 +899,7 @@ app.patch('/api/delivery/orders/:id',auth,role(['delivery']),(req,res)=>{
             }
 
             recordOrderStatus(orderId,'delivering','delivered',req.user,'PIN del cliente validado');
+            db.prepare("UPDATE delivery_profiles SET status='available',updated_at=CURRENT_TIMESTAMP WHERE delivery_user_id=?").run(req.user.id);
 
             return true;
         })();
