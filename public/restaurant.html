@@ -296,6 +296,7 @@ header button{
         </form><div id="listaEmpleados" class="productos"></div>
     </section>
     <section class="gestion-productos" id="seccionFinanzas" style="margin-bottom:20px"><div class="cabecera-seccion"><div><h2>💰 Ventas y cortes</h2><p id="porcentajeComision" style="color:#777;margin-top:5px"></p></div></div><div id="cortesRestaurante" style="display:grid;gap:10px">Cargando movimientos…</div></section>
+    <section class="gestion-productos" id="seccionAnaliticas" style="margin-bottom:20px"><div class="cabecera-seccion"><div><h2>📊 Estadísticas del negocio</h2><p style="color:#777;margin-top:5px">Consulta ventas, productos y desempeño operativo.</p></div><select id="periodoAnaliticas" onchange="cargarAnaliticas(this.value)"><option value="7">7 días</option><option value="30">30 días</option><option value="90">90 días</option></select></div><div id="panelAnaliticas">Cargando estadísticas…</div></section>
     <section class="gestion-productos" id="seccionPos" style="margin-bottom:20px;display:none"><div class="cabecera-seccion"><div><h2>🧾 Punto de venta</h2><p style="color:#777;margin-top:5px">Registra ventas en mostrador sin crear pedidos de reparto.</p></div><strong id="posResumen">$0.00 hoy</strong></div><div id="posCaja" style="margin-bottom:16px"></div><div id="posProductos" class="productos"></div><div id="posCarrito" style="margin-top:15px"></div><h3 style="margin-top:20px">Ventas recientes</h3><div id="posHistorial"></div></section>
     <section class="gestion-productos" id="seccionProductos">
         <div class="cabecera-seccion"><div><h2>🍔 Mi menú</h2><p style="color:#777;margin-top:5px">Crea productos y controla lo que está disponible.</p></div><strong id="totalProductos">0 productos</strong></div>
@@ -475,9 +476,11 @@ function aplicarPermisos(acceso){
     seccionDisponibilidad.style.display=acceso.isOwner?'block':'none';
     seccionEquipo.style.display=acceso.isOwner?'block':'none';
     seccionFinanzas.style.display=acceso.canViewFinance?'block':'none';
+    seccionAnaliticas.style.display=acceso.canViewFinance?'block':'none';
     seccionPos.style.display=acceso.canUsePos?'block':'none';
     seccionProductos.style.display=acceso.canManageProducts?'block':'none';
     if(acceso.canUsePos)cargarPos();
+    if(acceso.canViewFinance)cargarAnaliticas(periodoAnaliticas.value);
     if(acceso.isOwner)cargarEmpleados();
 }
 
@@ -903,6 +906,6 @@ if(comprobarAcceso()){
 
 </script>
 
-<script src="/restaurant-finance.js"></script><script src="/restaurant-pos.js"></script><script src="/pwa-install.js" defer></script><script src="/notifications.js" defer></script><script src="/feedback-launcher.js" defer></script><script src="/ui-dialogs.js" defer></script><script src="/ai-assistant.js" defer></script></body>
+<script src="/restaurant-finance.js"></script><script src="/restaurant-analytics.js"></script><script src="/restaurant-pos.js"></script><script src="/pwa-install.js" defer></script><script src="/notifications.js" defer></script><script src="/feedback-launcher.js" defer></script><script src="/ui-dialogs.js" defer></script><script src="/ai-assistant.js" defer></script></body>
 </html>
 
