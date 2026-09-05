@@ -5,6 +5,7 @@ const jwt=require("jsonwebtoken");
 const fs=require("fs");
 const crypto=require("crypto");
 const webpush=require('web-push');
+const sharp=require('sharp');
 const db=require("./database");
 const {OAuth2Client}=require("google-auth-library");
 
@@ -21,6 +22,8 @@ const uploadsDir=process.env.UPLOADS_DIR||path.join(dataDir,'uploads');
 fs.mkdirSync(uploadsDir,{recursive:true});
 const settlementProofDir=path.join(dataDir,'settlement-proofs');
 fs.mkdirSync(settlementProofDir,{recursive:true});
+const deleteLocalImage=value=>{if(!/^\/uploads\/restaurant-[a-zA-Z0-9._-]+$/.test(String(value||'')))return;try{fs.unlinkSync(path.join(uploadsDir,path.basename(value)));}catch(e){if(e.code!=='ENOENT')console.error('IMAGE CLEANUP ERROR',e.message);}};
+const directoryBytes=directory=>{if(!fs.existsSync(directory))return 0;let total=0;for(const entry of fs.readdirSync(directory,{withFileTypes:true})){const full=path.join(directory,entry.name);try{total+=entry.isDirectory()?directoryBytes(full):fs.statSync(full).size;}catch(e){}}return total;};
 const secretPath=path.join(dataDir,'.come_sayula_secret');
 const SECRET=process.env.JWT_SECRET||(
     fs.existsSync(secretPath)
@@ -223,6 +226,7 @@ app.get('/api/admin/pilot-readiness',auth,role(['admin']),(req,res)=>{const chec
     {key:'support',label:'Correo formal de soporte configurado',ready:Boolean(process.env.SUPPORT_EMAIL)},
     {key:'payment',label:'Proveedor de cobro en línea configurado',ready:Boolean(process.env.PAYMENT_PROVIDER_ENABLED==='1')}
 ];res.json({readyForControlledPilot:checks.filter(c=>['restaurant','courier','zones','notifications','backups'].includes(c.key)).every(c=>c.ready),readyForPublicPayments:checks.every(c=>c.ready),checks});});
+app.get('/api/admin/storage',auth,role(['admin']),(req,res)=>{const databaseBytes=fs.existsSync(db.name)?fs.statSync(db.name).size:0,uploadsBytes=directoryBytes(uploadsDir),backupsBytes=directoryBytes(path.join(dataDir,'backups')),proofsBytes=directoryBytes(settlementProofDir),usedBytes=databaseBytes+uploadsBytes+backupsBytes+proofsBytes,capacityBytes=Math.max(1,Number(process.env.DISK_CAPACITY_GB)||1)*1024*1024*1024;res.json({capacityBytes,usedBytes,percent:Number((usedBytes/capacityBytes*100).toFixed(2)),databaseBytes,uploadsBytes,backupsBytes,proofsBytes});});
 app.get('/api/admin/settlements',auth,role(['admin']),(req,res)=>{const pending=db.prepare(`SELECT r.id restaurant_id,r.name,date(o.created_at) period_date,COUNT(*) orders_count,ROUND(SUM(f.restaurant_due),2) amount FROM order_financials f JOIN orders o ON o.id=f.order_id JOIN restaurants r ON r.id=o.restaurant_id WHERE o.status='delivered' AND o.is_demo=0 AND f.settlement_status='pending' GROUP BY r.id,date(o.created_at) ORDER BY period_date,r.name`).all();const paid=db.prepare(`SELECT b.*,r.name restaurant_name,u.name paid_by_name FROM settlement_batches b JOIN restaurants r ON r.id=b.restaurant_id LEFT JOIN users u ON u.id=b.paid_by_user_id ORDER BY b.paid_at DESC LIMIT 100`).all();res.json({pending,paid});});
 app.post('/api/admin/settlements',auth,role(['admin']),rateLimit('settlements',20,60*60*1000),(req,res)=>{const restaurantId=Number(req.body.restaurantId),periodDate=String(req.body.periodDate||''),reference=String(req.body.reference||'').trim().slice(0,120),dataUrl=String(req.body.proofDataUrl||'');if(!Number.isInteger(restaurantId)||!/^\d{4}-\d{2}-\d{2}$/.test(periodDate)||reference.length<3)return res.status(400).json({error:'Selecciona el corte y escribe una referencia'});let proofName=null;if(dataUrl){const match=dataUrl.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/);if(!match)return res.status(400).json({error:'El comprobante debe ser una imagen PNG, JPG o WEBP'});const buffer=Buffer.from(match[2],'base64');if(!buffer.length||buffer.length>4*1024*1024)return res.status(400).json({error:'El comprobante debe pesar menos de 4 MB'});const valid=(match[1]==='jpeg'&&buffer[0]===0xff&&buffer[1]===0xd8)||(match[1]==='png'&&buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))||(match[1]==='webp'&&buffer.subarray(0,4).toString()==='RIFF'&&buffer.subarray(8,12).toString()==='WEBP');if(!valid)return res.status(400).json({error:'El archivo no contiene una imagen válida'});const ext=match[1]==='jpeg'?'jpg':match[1];proofName=crypto.randomUUID()+'.'+ext;fs.writeFileSync(path.join(settlementProofDir,proofName),buffer,{mode:0o600});}try{const result=db.transaction(()=>{const totals=db.prepare(`SELECT COUNT(*) count,ROUND(SUM(f.restaurant_due),2) amount FROM order_financials f JOIN orders o ON o.id=f.order_id WHERE o.restaurant_id=? AND date(o.created_at)=? AND o.status='delivered' AND o.is_demo=0 AND f.settlement_status='pending'`).get(restaurantId,periodDate);if(!totals.count)throw new Error('Ese corte ya fue conciliado o no tiene pedidos entregados');const batch=db.prepare('INSERT INTO settlement_batches(restaurant_id,period_date,amount,reference,proof_url,paid_by_user_id) VALUES(?,?,?,?,?,?)').run(restaurantId,periodDate,totals.amount,reference,proofName,req.user.id),batchId=Number(batch.lastInsertRowid);db.prepare(`UPDATE order_financials SET settlement_status='paid',settled_at=CURRENT_TIMESTAMP,settlement_batch_id=?,updated_at=CURRENT_TIMESTAMP WHERE order_id IN (SELECT id FROM orders WHERE restaurant_id=? AND date(created_at)=? AND status='delivered' AND is_demo=0) AND settlement_status='pending'`).run(batchId,restaurantId,periodDate);return {batchId,amount:totals.amount};})();audit(req,'settlement_paid','settlement',result.batchId);const owner=db.prepare('SELECT owner_id FROM restaurants WHERE id=?').get(restaurantId);addNotification(owner?.owner_id,null,'settlement_paid','Corte conciliado','Se registró el corte del '+periodDate+' por $'+Number(result.amount).toFixed(2)+'.','/restaurant.html');res.status(201).json({ok:true,...result,proofUrl:proofName?'/api/settlements/'+result.batchId+'/proof':null});}catch(e){if(proofName)try{fs.unlinkSync(path.join(settlementProofDir,proofName));}catch(_){}res.status(409).json({error:e.message});}});
 app.get('/api/settlements/:id/proof',auth,(req,res)=>{const batch=db.prepare('SELECT id,restaurant_id,proof_url FROM settlement_batches WHERE id=?').get(Number(req.params.id));if(!batch?.proof_url)return res.status(404).json({error:'Comprobante no encontrado'});const allowed=req.user.role==='admin'||Boolean((()=>{const access=getRestaurantAccess(req.user.id);return access&&access.id===batch.restaurant_id&&access.can_view_finance;})());if(!allowed)return res.status(403).json({error:'Sin permisos'});const file=path.join(settlementProofDir,path.basename(batch.proof_url));if(!fs.existsSync(file))return res.status(404).json({error:'Comprobante no encontrado'});res.sendFile(file);});
@@ -542,23 +546,22 @@ app.get('/api/restaurant/employees',auth,restaurantAccess(),restaurantOwner,(req
 app.post('/api/restaurant/employees',auth,restaurantAccess(),restaurantOwner,rateLimit('restaurant-employees',12,60*60*1000),async(req,res)=>{const name=String(req.body.name||'').trim().slice(0,100),email=normalizeEmail(req.body.email),phone=String(req.body.phone||'').trim().slice(0,30),password=String(req.body.password||'');if(!name||!email||password.length<10)return res.status(400).json({error:'Completa nombre, correo y una contraseña de al menos 10 caracteres'});if(db.prepare('SELECT id FROM users WHERE email=?').get(email))return res.status(409).json({error:'Ese correo ya pertenece a otra cuenta'});const id=db.transaction(()=>{const created=db.prepare("INSERT INTO users(name,email,phone,password_hash,role,account_status,email_verified) VALUES(?,?,?,?, 'restaurant_employee','approved',0)").run(name,email,phone,bcrypt.hashSync(password,12));db.prepare('INSERT INTO restaurant_members(user_id,restaurant_id,can_manage_orders,can_manage_products,can_view_finance) VALUES(?,?,?,?,?)').run(created.lastInsertRowid,req.restaurant.id,req.body.canManageOrders===false?0:1,req.body.canManageProducts?1:0,req.body.canViewFinance?1:0);return Number(created.lastInsertRowid)})();audit(req,'restaurant_employee_created','user',id);res.status(201).json({id});});
 app.patch('/api/restaurant/employees/:id',auth,restaurantAccess(),restaurantOwner,(req,res)=>{const id=Number(req.params.id),active=req.body.active===false?0:1;const result=db.prepare('UPDATE restaurant_members SET can_manage_orders=?,can_manage_products=?,can_view_finance=?,active=? WHERE user_id=? AND restaurant_id=?').run(req.body.canManageOrders?1:0,req.body.canManageProducts?1:0,req.body.canViewFinance?1:0,active,id,req.restaurant.id);if(result.changes!==1)return res.status(404).json({error:'Empleado no encontrado'});db.prepare("UPDATE users SET account_status=? WHERE id=? AND role='restaurant_employee'").run(active?'approved':'suspended',id);audit(req,'restaurant_employee_permissions_updated','user',id);res.json({ok:true});});
 
-app.post('/api/restaurant/uploads',auth,restaurantAccess('can_manage_products'),(req,res)=>{
+app.post('/api/restaurant/uploads',auth,restaurantAccess('can_manage_products'),async(req,res)=>{
     const match=String(req.body.dataUrl||'').match(/^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/);
     if(!match)return res.status(400).json({error:'Selecciona una imagen JPG, PNG o WEBP'});
     const buffer=Buffer.from(match[2],'base64');
     if(!buffer.length||buffer.length>4*1024*1024)return res.status(400).json({error:'La imagen debe pesar menos de 4 MB'});
     const validMagic=(match[1]==='jpeg'&&buffer[0]===0xff&&buffer[1]===0xd8)||(match[1]==='png'&&buffer.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])))||(match[1]==='webp'&&buffer.subarray(0,4).toString()==='RIFF'&&buffer.subarray(8,12).toString()==='WEBP');
     if(!validMagic)return res.status(400).json({error:'El archivo no contiene una imagen válida'});
-    const extension=match[1]==='jpeg'?'jpg':match[1];
-    const fileName=`restaurant-${req.user.id}-${Date.now()}-${Math.random().toString(36).slice(2,8)}.${extension}`;
-    fs.writeFileSync(path.join(uploadsDir,fileName),buffer);
-    res.status(201).json({url:'/uploads/'+fileName});
+    try{const optimized=await sharp(buffer,{limitInputPixels:40000000,failOn:'error'}).rotate().resize({width:1600,height:1600,fit:'inside',withoutEnlargement:true}).webp({quality:80,effort:4}).toBuffer();const fileName=`restaurant-${req.user.id}-${Date.now()}-${Math.random().toString(36).slice(2,8)}.webp`;fs.writeFileSync(path.join(uploadsDir,fileName),optimized,{mode:0o600});res.status(201).json({url:'/uploads/'+fileName,originalBytes:buffer.length,storedBytes:optimized.length});}catch(e){res.status(400).json({error:'No fue posible procesar esta imagen. Prueba con otra fotografía.'});}
 });
 
 app.put('/api/restaurant/profile',auth,restaurantAccess(),restaurantOwner,(req,res)=>{
     const image=String(req.body.image||'').trim();
     if(image&&!image.startsWith('/uploads/'))return res.status(400).json({error:'Imagen inválida'});
+    const previous=db.prepare('SELECT image FROM restaurants WHERE id=?').get(req.restaurant.id)?.image;
     db.prepare('UPDATE restaurants SET image=? WHERE id=?').run(image,req.restaurant.id);
+    if(previous&&previous!==image)deleteLocalImage(previous);
     res.json({ok:true,image});
 });
 app.put('/api/restaurant/availability',auth,restaurantAccess(),restaurantOwner,(req,res)=>{
@@ -601,9 +604,11 @@ app.put('/api/restaurant/products/:id',auth,restaurantAccess('can_manage_product
         return res.status(400).json({error:'Datos del producto inválidos'});
     }
     if(image&&!image.startsWith('/uploads/'))return res.status(400).json({error:'Imagen inválida'});
+    const previous=db.prepare('SELECT image FROM products WHERE id=? AND restaurant_id=?').get(req.params.id,restaurant.id)?.image;
     const result=db.prepare('UPDATE products SET name=?,description=?,price=?,image=? WHERE id=? AND restaurant_id=?')
         .run(name,description,price,image,req.params.id,restaurant.id);
     if(result.changes!==1)return res.status(404).json({error:'Producto no encontrado'});
+    if(previous&&previous!==image)deleteLocalImage(previous);
     res.json(db.prepare('SELECT * FROM products WHERE id=?').get(req.params.id));
 });
 
@@ -1088,7 +1093,7 @@ app.get('/api/health',(req,res)=>{try{const integrity=db.pragma('quick_check',{s
 
 const backupsDir=path.join(dataDir,'backups');
 async function automaticBackup(){
-    try{fs.mkdirSync(backupsDir,{recursive:true});const stamp=new Date().toISOString().replace(/[:.]/g,'-');const target=path.join(backupsDir,`come_sayula-${stamp}.db`);await db.backup(target);console.log('Respaldo automático verificado: '+target);}
+    try{fs.mkdirSync(backupsDir,{recursive:true});const stamp=new Date().toISOString().replace(/[:.]/g,'-');const target=path.join(backupsDir,`come_sayula-${stamp}.db`);await db.backup(target);const backups=fs.readdirSync(backupsDir).filter(name=>/^come_sayula-.*\.db$/.test(name)).map(name=>({name,time:fs.statSync(path.join(backupsDir,name)).mtimeMs})).sort((a,b)=>b.time-a.time);for(const old of backups.slice(7))fs.unlinkSync(path.join(backupsDir,old.name));console.log('Respaldo automático verificado: '+target+' · conservados '+Math.min(backups.length,7));}
     catch(error){console.error('BACKUP ERROR:',error.message);}
 }
 if(process.env.DISABLE_AUTOMATIC_BACKUP!=='1'){setTimeout(automaticBackup,5000);setInterval(automaticBackup,24*60*60*1000);}

@@ -23,6 +23,10 @@ async function run(){
   const employeeFinance=await api('/api/restaurant/settlement',{token:employee});ok(employeeFinance.status===403,'empleado sin permiso no puede ver cortes');
   const employeeProduct=await api('/api/restaurant/products',{token:employee,method:'POST',body:{name:'No autorizado',price:20}});ok(employeeProduct.status===403,'empleado sin permiso no puede modificar productos');
   await api('/api/restaurant/location',{token:restaurant,method:'PUT',body:{latitude:19.8826,longitude:-103.5998}});
+  const sampleImage='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+  const optimizedImage=await api('/api/restaurant/uploads',{token:restaurant,method:'POST',body:{dataUrl:sampleImage}});ok(optimizedImage.status===201&&optimizedImage.data.url.endsWith('.webp')&&optimizedImage.data.storedBytes>0,'fotografía se valida y optimiza automáticamente');
+  const storedImage=await fetch(base+optimizedImage.data.url);ok(storedImage.status===200&&storedImage.headers.get('content-type')==='image/webp','servidor entrega la fotografía optimizada');
+  const storage=await api('/api/admin/storage',{token:admin});ok(storage.status===200&&storage.data.capacityBytes===1073741824&&storage.data.uploadsBytes>0,'administrador consulta capacidad y uso del disco');
   const product=await api('/api/restaurant/products',{token:restaurant,method:'POST',body:{name:'Pedido controlado',description:'Prueba',price:100,image:''}});ok(product.status===201,'producto controlado creado');
   const me=await api('/api/restaurant/me',{token:restaurant}),restaurantId=me.data.id;
   const visibility=await api('/api/admin/restaurants/'+restaurantId+'/visibility',{token:admin,method:'PATCH',body:{category:'Comida mexicana',priority:80,featured:true}});ok(visibility.status===200&&visibility.data.featured,'administrador destaca y prioriza restaurante');
