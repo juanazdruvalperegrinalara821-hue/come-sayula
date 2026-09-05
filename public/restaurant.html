@@ -308,6 +308,8 @@ header button{
             <label><input id="productoControlStock" type="checkbox"> Controlar existencias</label>
             <input id="productoExistencias" type="number" min="0" step="1" value="0" placeholder="Existencias">
             <input id="productoStockMinimo" type="number" min="0" step="1" value="5" placeholder="Avisar cuando queden">
+            <textarea id="productoVariantes" placeholder="Tamaños o variantes, uno por línea: Grande | 25"></textarea>
+            <textarea id="productoComplementos" placeholder="Complementos, uno por línea: Queso extra | 15"></textarea>
             <button id="botonProducto" type="submit">＋ Guardar producto</button>
         </form>
         <div id="productos" class="productos"></div>
@@ -502,6 +504,7 @@ function mostrarProductos(productos){
             <div class="precio">$${Number(producto.price).toFixed(2)}</div>
             <small>${escapar(producto.category||'Comida')}</small>
             <small>${producto.stock_enabled?(producto.stock_quantity<=producto.low_stock_threshold?'⚠️ ':'📦 ')+producto.stock_quantity+' disponibles':'📦 Sin control de existencias'}</small>
+            <small>${JSON.parse(producto.variants_json||'[]').length} variantes · ${JSON.parse(producto.addons_json||'[]').length} complementos</small>
             <small>${producto.available?'🟢 Disponible':'⚪ No disponible'}</small>
             <div class="producto-acciones">
                 <button class="editar" onclick="editarProducto(${producto.id})">✏️ Editar</button>
@@ -517,10 +520,12 @@ async function guardarProducto(evento){
     try{
         const archivo=productoImagen.files[0];
         const image=archivo?await subirImagen(archivo):imagenProductoActual;
+        const leerOpciones=texto=>texto.split('\n').map(linea=>{const [name,price='0']=linea.split('|');return {name:name.trim(),priceDelta:Number(price.trim())||0}}).filter(item=>item.name);
         await solicitudProducto('/api/restaurant/products'+(productoEditandoId?'/'+productoEditandoId:''),productoEditandoId?'PUT':'POST',{
             name:productoNombre.value,description:productoDescripcion.value,
             price:productoPrecio.value,category:productoCategoria.value,image,
-            stockEnabled:productoControlStock.checked,stockQuantity:productoExistencias.value,lowStockThreshold:productoStockMinimo.value
+            stockEnabled:productoControlStock.checked,stockQuantity:productoExistencias.value,lowStockThreshold:productoStockMinimo.value,
+            variants:leerOpciones(productoVariantes.value),addons:leerOpciones(productoComplementos.value)
         });
         evento.target.reset();
         productoEditandoId=null;imagenProductoActual='';
@@ -537,6 +542,7 @@ async function editarProducto(id){
     productoCategoria.value=producto.category||'Comida';
     productoControlStock.checked=Boolean(producto.stock_enabled);productoExistencias.value=producto.stock_quantity||0;productoStockMinimo.value=producto.low_stock_threshold??5;
     productoDescripcion.value=producto.description||'';
+    const aTexto=value=>{try{return JSON.parse(value||'[]').map(item=>item.name+' | '+item.priceDelta).join('\n')}catch{return ''}};productoVariantes.value=aTexto(producto.variants_json);productoComplementos.value=aTexto(producto.addons_json);
     document.getElementById('botonProducto').textContent='💾 Guardar cambios';
     document.querySelector('.form-producto').scrollIntoView({behavior:'smooth',block:'center'});
     productoNombre.focus();

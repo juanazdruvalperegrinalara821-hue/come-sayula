@@ -88,6 +88,9 @@ ensureColumn('products','category',"TEXT NOT NULL DEFAULT 'Comida'");
 ensureColumn('products','stock_enabled','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('products','stock_quantity','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('products','low_stock_threshold','INTEGER NOT NULL DEFAULT 5');
+ensureColumn('products','variants_json',"TEXT NOT NULL DEFAULT '[]'");
+ensureColumn('products','addons_json',"TEXT NOT NULL DEFAULT '[]'");
+ensureColumn('order_items','options_description','TEXT');
 ensureColumn('directory_entries','priority','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('directory_entries','featured','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('orders','subtotal','REAL');
@@ -260,6 +263,7 @@ CREATE TABLE IF NOT EXISTS pos_sale_items(
 );
 CREATE INDEX IF NOT EXISTS idx_pos_sales_restaurant ON pos_sales(restaurant_id,created_at,status);
 `);
+ensureColumn('pos_sale_items','options_description','TEXT');
 db.prepare('UPDATE restaurant_subscriptions SET registration_fee=50,first_month_fee=100,initial_payment_total=150 WHERE registration_fee=150').run();
 
 if(!db.prepare('SELECT id FROM delivery_zones LIMIT 1').get()){

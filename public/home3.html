@@ -1101,7 +1101,14 @@ function cerrarMenu(){
 
 }
 
-function agregarProducto(producto, restauranteId, restauranteNombre){
+async function elegirOpcionesProducto(producto){
+    let variants=[],addons=[];try{variants=JSON.parse(producto.variants_json||'[]');addons=JSON.parse(producto.addons_json||'[]')}catch{}
+    if(!variants.length&&!addons.length)return {variant:'',addons:[],extra:0,label:''};
+    return new Promise(resolve=>{const layer=document.createElement('div');layer.style.cssText='position:fixed;inset:0;background:#0008;z-index:5000;display:grid;place-items:center;padding:18px';layer.innerHTML=`<section style="background:white;border-radius:20px;padding:22px;width:min(440px,100%);max-height:85vh;overflow:auto"><h2>${escapar(producto.name)}</h2>${variants.length?`<h3>Elige una opción</h3>${variants.map((v,i)=>`<label style="display:block;padding:9px"><input type="radio" name="csVariant" value="${i}" ${i===0?'checked':''}> ${escapar(v.name)} ${v.priceDelta?'+$'+Number(v.priceDelta).toFixed(2):''}</label>`).join('')}`:''}${addons.length?`<h3>Complementos</h3>${addons.map((v,i)=>`<label style="display:block;padding:9px"><input type="checkbox" name="csAddon" value="${i}"> ${escapar(v.name)} ${v.priceDelta?'+$'+Number(v.priceDelta).toFixed(2):''}</label>`).join('')}`:''}<div style="display:flex;gap:10px;margin-top:16px"><button data-cancel style="flex:1">Cancelar</button><button data-ok class="principal" style="flex:1">Agregar</button></div></section>`;const finish=value=>{layer.remove();resolve(value)};layer.querySelector('[data-cancel]').onclick=()=>finish(null);layer.querySelector('[data-ok]').onclick=()=>{const variant=variants[Number(layer.querySelector('[name=csVariant]:checked')?.value)]||null,selected=[...layer.querySelectorAll('[name=csAddon]:checked')].map(el=>addons[Number(el.value)]);finish({variant:variant?.name||'',addons:selected.map(x=>x.name),extra:Number(variant?.priceDelta||0)+selected.reduce((s,x)=>s+Number(x.priceDelta||0),0),label:[variant?.name,...selected.map(x=>x.name)].filter(Boolean).join(', ')})};document.body.appendChild(layer);});
+}
+
+async function agregarProducto(producto, restauranteId, restauranteNombre){
+    const seleccion=await elegirOpcionesProducto(producto);if(!seleccion)return;
 
     let carritoActual = JSON.parse(
         localStorage.getItem('come_sayula_carrito') || '[]'
@@ -1110,7 +1117,7 @@ function agregarProducto(producto, restauranteId, restauranteNombre){
     const existente = carritoActual.find(
         item =>
             item.id === producto.id &&
-            item.restaurantId === restauranteId
+            item.restaurantId === restauranteId && item.optionKey===(seleccion.variant+'|'+seleccion.addons.join('|'))
     );
 
     if(existente){
@@ -1125,7 +1132,8 @@ function agregarProducto(producto, restauranteId, restauranteNombre){
 
             name: producto.name,
 
-            price: Number(producto.price),
+            price: Number(producto.price)+seleccion.extra,
+            variant:seleccion.variant,addons:seleccion.addons,optionsDescription:seleccion.label,optionKey:seleccion.variant+'|'+seleccion.addons.join('|'),
 
             category: producto.category || 'Comida',
 
@@ -1793,7 +1801,7 @@ async function confirmarPedido(evento){
     boton.disabled=true;boton.textContent='Guardando pedido…';
     const address=direccionPedido.value.trim()+(referenciaPedido.value.trim()?' | Referencia: '+referenciaPedido.value.trim():'');
     try{
-        const respuesta=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sessionStorage.getItem('cs_token')},body:JSON.stringify({restaurantId:productos[0].restaurantId,address,paymentMethod:pagoPedido.value,deliveryLatitude:coordenadasEntrega.latitude,deliveryLongitude:coordenadasEntrega.longitude,clientRequestId:solicitudPedidoId,ageConfirmed:contieneAlcohol&&document.getElementById('confirmarEdadPedido')?.checked,items:productos.map(item=>({productId:item.id,quantity:item.quantity}))})});
+        const respuesta=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sessionStorage.getItem('cs_token')},body:JSON.stringify({restaurantId:productos[0].restaurantId,address,paymentMethod:pagoPedido.value,deliveryLatitude:coordenadasEntrega.latitude,deliveryLongitude:coordenadasEntrega.longitude,clientRequestId:solicitudPedidoId,ageConfirmed:contieneAlcohol&&document.getElementById('confirmarEdadPedido')?.checked,items:productos.map(item=>({productId:item.id,quantity:item.quantity,variant:item.variant||'',addons:item.addons||[]}))})});
         const datos=await respuesta.json();if(!respuesta.ok)throw new Error(datos.error||'No se pudo guardar el pedido.');
         localStorage.removeItem('come_sayula_carrito');actualizarContadorCarrito();
         const avisoPago=datos.paymentStatus==='awaiting_confirmation'?'<div style="background:#fff3cd;color:#715200;padding:12px;border-radius:11px;margin-bottom:15px"><strong>⏳ Transferencia: pago por confirmar</strong><br><small>El restaurante debe comprobar el depósito.</small></div>':'';
