@@ -296,7 +296,7 @@ header button{
         </form><div id="listaEmpleados" class="productos"></div>
     </section>
     <section class="gestion-productos" id="seccionFinanzas" style="margin-bottom:20px"><div class="cabecera-seccion"><div><h2>💰 Ventas y cortes</h2><p id="porcentajeComision" style="color:#777;margin-top:5px"></p></div></div><div id="cortesRestaurante" style="display:grid;gap:10px">Cargando movimientos…</div></section>
-    <section class="gestion-productos" id="seccionPos" style="margin-bottom:20px;display:none"><div class="cabecera-seccion"><div><h2>🧾 Punto de venta</h2><p style="color:#777;margin-top:5px">Registra ventas en mostrador sin crear pedidos de reparto.</p></div><strong id="posResumen">$0.00 hoy</strong></div><div id="posProductos" class="productos"></div><div id="posCarrito" style="margin-top:15px"></div><h3 style="margin-top:20px">Ventas recientes</h3><div id="posHistorial"></div></section>
+    <section class="gestion-productos" id="seccionPos" style="margin-bottom:20px;display:none"><div class="cabecera-seccion"><div><h2>🧾 Punto de venta</h2><p style="color:#777;margin-top:5px">Registra ventas en mostrador sin crear pedidos de reparto.</p></div><strong id="posResumen">$0.00 hoy</strong></div><div id="posCaja" style="margin-bottom:16px"></div><div id="posProductos" class="productos"></div><div id="posCarrito" style="margin-top:15px"></div><h3 style="margin-top:20px">Ventas recientes</h3><div id="posHistorial"></div></section>
     <section class="gestion-productos" id="seccionProductos">
         <div class="cabecera-seccion"><div><h2>🍔 Mi menú</h2><p style="color:#777;margin-top:5px">Crea productos y controla lo que está disponible.</p></div><strong id="totalProductos">0 productos</strong></div>
         <form class="form-producto" onsubmit="guardarProducto(event)">
@@ -772,6 +772,8 @@ function mostrarPedidos(pedidos){
 
             ${pago}
 
+            <button onclick="imprimirComanda(${pedido.id})" style="margin-top:10px">🖨️ Imprimir comanda</button>
+
             ${controlEstado}
 
         </div>
@@ -781,6 +783,8 @@ function mostrarPedidos(pedidos){
     }).join('');
 
 }
+
+function imprimirComanda(id){const pedido=(datosRestaurante?.orders||[]).find(p=>p.id===id);if(!pedido)return;const items=(pedido.items||[]).map(item=>`<tr><td>${item.quantity} × ${escapar(item.product_name)}${item.options_description?`<br><small>${escapar(item.options_description)}</small>`:''}</td><td>$${(Number(item.unit_price)*Number(item.quantity)).toFixed(2)}</td></tr>`).join(''),ventana=window.open('','_blank','width=430,height=700');ventana.document.write(`<!doctype html><html><head><title>Comanda #${pedido.id}</title><style>body{font:16px Arial;padding:18px}h1{text-align:center}table{width:100%;border-collapse:collapse}td{padding:9px;border-bottom:1px dashed #999}td:last-child{text-align:right}@media print{button{display:none}}</style></head><body><h1>COME SAYULA</h1><h2>Comanda #${pedido.id}</h2><p><strong>${escapar(datosRestaurante.name||'Restaurante')}</strong><br>${formatearFecha(pedido.created_at)}<br>Cliente: ${escapar(pedido.customer_name||'Cliente')}</p><table>${items}</table><h2>Total: $${Number(pedido.total).toFixed(2)}</h2><button onclick="print()">Imprimir</button></body></html>`);ventana.document.close();ventana.focus();setTimeout(()=>ventana.print(),250)}
 
 async function confirmarTransferencia(id){
     if(!await csConfirm('Confirma únicamente después de comprobar el depósito en tu cuenta.'))return;

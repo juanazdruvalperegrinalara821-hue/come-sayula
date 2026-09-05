@@ -262,8 +262,40 @@ CREATE TABLE IF NOT EXISTS pos_sale_items(
     FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pos_sales_restaurant ON pos_sales(restaurant_id,created_at,status);
+CREATE TABLE IF NOT EXISTS cash_sessions(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    restaurant_id INTEGER NOT NULL,
+    opened_by_user_id INTEGER,
+    closed_by_user_id INTEGER,
+    opening_amount REAL NOT NULL DEFAULT 0 CHECK(opening_amount>=0),
+    counted_amount REAL,
+    expected_amount REAL,
+    difference_amount REAL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','closed')),
+    opening_note TEXT,
+    closing_note TEXT,
+    opened_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    closed_at TEXT,
+    FOREIGN KEY(restaurant_id) REFERENCES restaurants(id),
+    FOREIGN KEY(opened_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY(closed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cash_one_open ON cash_sessions(restaurant_id) WHERE status='open';
+CREATE TABLE IF NOT EXISTS cash_movements(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cash_session_id INTEGER NOT NULL,
+    user_id INTEGER,
+    movement_type TEXT NOT NULL CHECK(movement_type IN ('income','withdrawal')),
+    amount REAL NOT NULL CHECK(amount>0),
+    reason TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(cash_session_id) REFERENCES cash_sessions(id) ON DELETE CASCADE,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cash_movements_session ON cash_movements(cash_session_id,created_at);
 `);
 ensureColumn('pos_sale_items','options_description','TEXT');
+ensureColumn('pos_sales','cash_session_id','INTEGER');
 db.prepare('UPDATE restaurant_subscriptions SET registration_fee=50,first_month_fee=100,initial_payment_total=150 WHERE registration_fee=150').run();
 
 if(!db.prepare('SELECT id FROM delivery_zones LIMIT 1').get()){
