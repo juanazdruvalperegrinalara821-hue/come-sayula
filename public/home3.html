@@ -973,7 +973,12 @@ async function abrirRestaurante(id,nombre){
 
         }else{
 
+            const ordenCategorias=['Comida','Bebidas','Bebidas alcohólicas','Postres','Extras'];
+            menu.sort((a,b)=>ordenCategorias.indexOf(a.category||'Comida')-ordenCategorias.indexOf(b.category||'Comida'));
+            let categoriaActual='';
             menu.forEach(producto => {
+
+                if((producto.category||'Comida')!==categoriaActual){categoriaActual=producto.category||'Comida';html+=`<h2 style="grid-column:1/-1;margin:12px 0 0">${categoriaActual==='Bebidas alcohólicas'?'🔞 ':''}${escapar(categoriaActual)}</h2>`;}
 
                 html += `
 
@@ -1002,6 +1007,7 @@ async function abrirRestaurante(id,nombre){
                         <h3 style="margin-bottom:8px;">
                             ${escapar(producto.name)}
                         </h3>
+                        ${producto.category==='Bebidas alcohólicas'?'<small style="display:inline-block;background:#fff1e6;color:#9a3412;padding:5px 8px;border-radius:99px;margin-bottom:8px">Venta exclusiva para mayores de 18 años</small>':''}
 
                         <p style="
                             color:#777;
@@ -1120,6 +1126,8 @@ function agregarProducto(producto, restauranteId, restauranteNombre){
             name: producto.name,
 
             price: Number(producto.price),
+
+            category: producto.category || 'Comida',
 
             quantity: 1,
 
@@ -1693,6 +1701,7 @@ function continuarPedido(){
     }
 
     const total=productos.reduce((suma,item)=>suma+Number(item.price)*Number(item.quantity),0);
+    const contieneAlcohol=productos.some(item=>item.category==='Bebidas alcohólicas');
     solicitudPedidoId=(globalThis.crypto?.randomUUID?globalThis.crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2));
     cotizacionEnvio=null;
     cerrarCarrito();
@@ -1709,6 +1718,7 @@ function continuarPedido(){
             <div id="mapaEntregaCliente" style="height:220px;border-radius:13px;margin-top:10px;display:none"></div>
             <label style="display:block;font-weight:bold;margin:12px 0 6px">🏠 Referencias</label><input id="referenciaPedido" placeholder="Color de casa, entre calles…" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:11px">
             <label style="display:block;font-weight:bold;margin:12px 0 6px">💳 Forma de pago</label><select id="pagoPedido" onchange="actualizarAvisoPago()" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:11px;background:white"><option value="Efectivo">Efectivo al recibir</option><option value="Transferencia">Transferencia (requiere confirmación)</option><option value="Tarjeta al recibir">Tarjeta al recibir</option></select><div id="avisoPago" style="background:#fff7db;color:#725000;padding:10px;border-radius:10px;margin-top:8px;font-size:13px">El pago se realizará cuando recibas el pedido.</div>
+            ${contieneAlcohol?'<label style="display:block;background:#fff1e6;color:#8a3412;padding:12px;border-radius:11px;margin-top:12px"><input id="confirmarEdadPedido" type="checkbox"> Confirmo que la persona que recibirá el pedido es mayor de 18 años y mostrará identificación.</label>':''}
             <div id="errorPedido" style="color:#b42318;margin-top:10px"></div><button id="botonConfirmarPedido" type="submit" style="width:100%;border:0;background:linear-gradient(135deg,#f47b20,#e85d04);color:white;padding:15px;border-radius:12px;font-weight:bold;font-size:16px;margin-top:16px;cursor:pointer">Selecciona ubicación para calcular</button>
         </form></div>`;
     document.body.appendChild(ventana);
@@ -1777,11 +1787,13 @@ async function confirmarPedido(evento){
     const productos=JSON.parse(localStorage.getItem('come_sayula_carrito')||'[]');
     const boton=document.getElementById('botonConfirmarPedido');
     if(!productos.length){cerrarCheckout();return;}
+    const contieneAlcohol=productos.some(item=>item.category==='Bebidas alcohólicas');
+    if(contieneAlcohol&&!document.getElementById('confirmarEdadPedido')?.checked){document.getElementById('errorPedido').textContent='🔞 Debes confirmar mayoría de edad para continuar.';return;}
     if(!coordenadasEntrega||!cotizacionEnvio){document.getElementById('errorPedido').textContent='📍 Selecciona tu ubicación y espera el cálculo de envío.';return;}
     boton.disabled=true;boton.textContent='Guardando pedido…';
     const address=direccionPedido.value.trim()+(referenciaPedido.value.trim()?' | Referencia: '+referenciaPedido.value.trim():'');
     try{
-        const respuesta=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sessionStorage.getItem('cs_token')},body:JSON.stringify({restaurantId:productos[0].restaurantId,address,paymentMethod:pagoPedido.value,deliveryLatitude:coordenadasEntrega.latitude,deliveryLongitude:coordenadasEntrega.longitude,clientRequestId:solicitudPedidoId,items:productos.map(item=>({productId:item.id,quantity:item.quantity}))})});
+        const respuesta=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sessionStorage.getItem('cs_token')},body:JSON.stringify({restaurantId:productos[0].restaurantId,address,paymentMethod:pagoPedido.value,deliveryLatitude:coordenadasEntrega.latitude,deliveryLongitude:coordenadasEntrega.longitude,clientRequestId:solicitudPedidoId,ageConfirmed:contieneAlcohol&&document.getElementById('confirmarEdadPedido')?.checked,items:productos.map(item=>({productId:item.id,quantity:item.quantity}))})});
         const datos=await respuesta.json();if(!respuesta.ok)throw new Error(datos.error||'No se pudo guardar el pedido.');
         localStorage.removeItem('come_sayula_carrito');actualizarContadorCarrito();
         const avisoPago=datos.paymentStatus==='awaiting_confirmation'?'<div style="background:#fff3cd;color:#715200;padding:12px;border-radius:11px;margin-bottom:15px"><strong>⏳ Transferencia: pago por confirmar</strong><br><small>El restaurante debe comprobar el depósito.</small></div>':'';

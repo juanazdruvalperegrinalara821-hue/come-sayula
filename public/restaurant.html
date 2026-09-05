@@ -291,16 +291,18 @@ header button{
         <form class="form-producto" onsubmit="crearEmpleado(event)">
             <input id="empleadoNombre" maxlength="100" placeholder="Nombre del empleado" required><input id="empleadoCorreo" type="email" placeholder="Correo" required><input id="empleadoTelefono" placeholder="Teléfono">
             <input id="empleadoPassword" type="password" minlength="10" placeholder="Contraseña temporal (10 caracteres)" required>
-            <label><input id="empleadoPedidos" type="checkbox" checked> Atender pedidos</label><label><input id="empleadoProductos" type="checkbox"> Administrar productos</label><label><input id="empleadoFinanzas" type="checkbox"> Ver ventas y cortes</label>
+            <label><input id="empleadoPedidos" type="checkbox" checked> Atender pedidos</label><label><input id="empleadoProductos" type="checkbox"> Administrar productos</label><label><input id="empleadoFinanzas" type="checkbox"> Ver ventas y cortes</label><label><input id="empleadoPos" type="checkbox"> Usar punto de venta</label>
             <button type="submit">Crear empleado</button>
         </form><div id="listaEmpleados" class="productos"></div>
     </section>
     <section class="gestion-productos" id="seccionFinanzas" style="margin-bottom:20px"><div class="cabecera-seccion"><div><h2>💰 Ventas y cortes</h2><p id="porcentajeComision" style="color:#777;margin-top:5px"></p></div></div><div id="cortesRestaurante" style="display:grid;gap:10px">Cargando movimientos…</div></section>
+    <section class="gestion-productos" id="seccionPos" style="margin-bottom:20px;display:none"><div class="cabecera-seccion"><div><h2>🧾 Punto de venta</h2><p style="color:#777;margin-top:5px">Registra ventas en mostrador sin crear pedidos de reparto.</p></div><strong id="posResumen">$0.00 hoy</strong></div><div id="posProductos" class="productos"></div><div id="posCarrito" style="margin-top:15px"></div><h3 style="margin-top:20px">Ventas recientes</h3><div id="posHistorial"></div></section>
     <section class="gestion-productos" id="seccionProductos">
         <div class="cabecera-seccion"><div><h2>🍔 Mi menú</h2><p style="color:#777;margin-top:5px">Crea productos y controla lo que está disponible.</p></div><strong id="totalProductos">0 productos</strong></div>
         <form class="form-producto" onsubmit="guardarProducto(event)">
             <input id="productoNombre" placeholder="Nombre del producto" maxlength="100" required>
             <input id="productoPrecio" type="number" min="1" step="0.01" placeholder="Precio" required>
+            <select id="productoCategoria" required><option value="Comida">🍽️ Comida</option><option value="Bebidas">🥤 Bebidas</option><option value="Bebidas alcohólicas">🔞 Bebidas alcohólicas</option><option value="Postres">🍰 Postres</option><option value="Extras">➕ Extras</option></select>
             <label class="subir-foto" style="margin:0;text-align:center">📷 Foto del platillo<input id="productoImagen" type="file" accept="image/jpeg,image/png,image/webp" hidden></label>
             <input id="productoDescripcion" class="descripcion" placeholder="Descripción del producto">
             <button id="botonProducto" type="submit">＋ Guardar producto</button>
@@ -468,15 +470,17 @@ function aplicarPermisos(acceso){
     seccionDisponibilidad.style.display=acceso.isOwner?'block':'none';
     seccionEquipo.style.display=acceso.isOwner?'block':'none';
     seccionFinanzas.style.display=acceso.canViewFinance?'block':'none';
+    seccionPos.style.display=acceso.canUsePos?'block':'none';
     seccionProductos.style.display=acceso.canManageProducts?'block':'none';
+    if(acceso.canUsePos)cargarPos();
     if(acceso.isOwner)cargarEmpleados();
 }
 
 async function cargarEmpleados(){
-    try{const respuesta=await fetch('/api/restaurant/employees',{headers:{Authorization:'Bearer '+obtenerToken()}}),empleados=await respuesta.json();if(!respuesta.ok)throw new Error(empleados.error);listaEmpleados.innerHTML=empleados.length?empleados.map(e=>`<article class="producto ${e.active?'':'inactivo'}" data-employee-id="${e.id}"><h3>${escapar(e.name)}</h3><small>${escapar(e.email)}</small><label><input type="checkbox" ${e.can_manage_orders?'checked':''} onchange="actualizarEmpleado(${e.id})"> Pedidos</label><label><input type="checkbox" ${e.can_manage_products?'checked':''} onchange="actualizarEmpleado(${e.id})"> Productos</label><label><input type="checkbox" ${e.can_view_finance?'checked':''} onchange="actualizarEmpleado(${e.id})"> Finanzas</label><label><input type="checkbox" ${e.active?'checked':''} onchange="actualizarEmpleado(${e.id})"> Cuenta activa</label></article>`).join(''):'Todavía no hay empleados.';}catch(e){listaEmpleados.textContent=e.message;}
+    try{const respuesta=await fetch('/api/restaurant/employees',{headers:{Authorization:'Bearer '+obtenerToken()}}),empleados=await respuesta.json();if(!respuesta.ok)throw new Error(empleados.error);listaEmpleados.innerHTML=empleados.length?empleados.map(e=>`<article class="producto ${e.active?'':'inactivo'}" data-employee-id="${e.id}"><h3>${escapar(e.name)}</h3><small>${escapar(e.email)}</small><label><input type="checkbox" ${e.can_manage_orders?'checked':''} onchange="actualizarEmpleado(${e.id})"> Pedidos</label><label><input type="checkbox" ${e.can_manage_products?'checked':''} onchange="actualizarEmpleado(${e.id})"> Productos</label><label><input type="checkbox" ${e.can_view_finance?'checked':''} onchange="actualizarEmpleado(${e.id})"> Finanzas</label><label><input type="checkbox" ${e.can_use_pos?'checked':''} onchange="actualizarEmpleado(${e.id})"> Punto de venta</label><label><input type="checkbox" ${e.active?'checked':''} onchange="actualizarEmpleado(${e.id})"> Cuenta activa</label></article>`).join(''):'Todavía no hay empleados.';}catch(e){listaEmpleados.textContent=e.message;}
 }
-async function crearEmpleado(event){event.preventDefault();try{await solicitudProducto('/api/restaurant/employees','POST',{name:empleadoNombre.value,email:empleadoCorreo.value,phone:empleadoTelefono.value,password:empleadoPassword.value,canManageOrders:empleadoPedidos.checked,canManageProducts:empleadoProductos.checked,canViewFinance:empleadoFinanzas.checked});event.target.reset();empleadoPedidos.checked=true;await cargarEmpleados();alert('✅ Acceso del empleado creado.');}catch(e){alert('❌ '+e.message);}}
-async function actualizarEmpleado(id){const tarjeta=listaEmpleados.querySelector(`[data-employee-id="${id}"]`);if(!tarjeta)return;const checks=tarjeta.querySelectorAll('input[type=checkbox]');try{await solicitudProducto('/api/restaurant/employees/'+id,'PATCH',{canManageOrders:checks[0].checked,canManageProducts:checks[1].checked,canViewFinance:checks[2].checked,active:checks[3].checked});await cargarEmpleados();}catch(e){alert('❌ '+e.message);await cargarEmpleados();}}
+async function crearEmpleado(event){event.preventDefault();try{await solicitudProducto('/api/restaurant/employees','POST',{name:empleadoNombre.value,email:empleadoCorreo.value,phone:empleadoTelefono.value,password:empleadoPassword.value,canManageOrders:empleadoPedidos.checked,canManageProducts:empleadoProductos.checked,canViewFinance:empleadoFinanzas.checked,canUsePos:empleadoPos.checked});event.target.reset();empleadoPedidos.checked=true;await cargarEmpleados();alert('✅ Acceso del empleado creado.');}catch(e){alert('❌ '+e.message);}}
+async function actualizarEmpleado(id){const tarjeta=listaEmpleados.querySelector(`[data-employee-id="${id}"]`);if(!tarjeta)return;const checks=tarjeta.querySelectorAll('input[type=checkbox]');try{await solicitudProducto('/api/restaurant/employees/'+id,'PATCH',{canManageOrders:checks[0].checked,canManageProducts:checks[1].checked,canViewFinance:checks[2].checked,canUsePos:checks[3].checked,active:checks[4].checked});await cargarEmpleados();}catch(e){alert('❌ '+e.message);await cargarEmpleados();}}
 
 async function guardarDisponibilidad(event){event.preventDefault();try{const result=await solicitudProducto('/api/restaurant/availability','PUT',{status:estadoNegocio.value,prepMinutes:Number(minutosPreparacion.value),specialHours:horarioEspecial.value});alert('✅ Disponibilidad actualizada. Tiempo estimado: '+result.estimatedPrepMinutes+' minutos.');await cargarPanel()}catch(error){alert('❌ '+error.message)}}
 
@@ -493,6 +497,7 @@ function mostrarProductos(productos){
             <h3>${escapar(producto.name)}</h3>
             <p style="color:#666">${escapar(producto.description||'Sin descripción')}</p>
             <div class="precio">$${Number(producto.price).toFixed(2)}</div>
+            <small>${escapar(producto.category||'Comida')}</small>
             <small>${producto.available?'🟢 Disponible':'⚪ No disponible'}</small>
             <div class="producto-acciones">
                 <button class="editar" onclick="editarProducto(${producto.id})">✏️ Editar</button>
@@ -510,7 +515,7 @@ async function guardarProducto(evento){
         const image=archivo?await subirImagen(archivo):imagenProductoActual;
         await solicitudProducto('/api/restaurant/products'+(productoEditandoId?'/'+productoEditandoId:''),productoEditandoId?'PUT':'POST',{
             name:productoNombre.value,description:productoDescripcion.value,
-            price:productoPrecio.value,image
+            price:productoPrecio.value,category:productoCategoria.value,image
         });
         evento.target.reset();
         productoEditandoId=null;imagenProductoActual='';
@@ -524,6 +529,7 @@ async function editarProducto(id){
     if(!producto)return;
     productoEditandoId=id;imagenProductoActual=producto.image||'';
     productoNombre.value=producto.name;productoPrecio.value=producto.price;
+    productoCategoria.value=producto.category||'Comida';
     productoDescripcion.value=producto.description||'';
     document.getElementById('botonProducto').textContent='💾 Guardar cambios';
     document.querySelector('.form-producto').scrollIntoView({behavior:'smooth',block:'center'});
@@ -881,6 +887,6 @@ if(comprobarAcceso()){
 
 </script>
 
-<script src="/restaurant-finance.js"></script><script src="/pwa-install.js" defer></script><script src="/notifications.js" defer></script><script src="/feedback-launcher.js" defer></script><script src="/ui-dialogs.js" defer></script><script src="/ai-assistant.js" defer></script></body>
+<script src="/restaurant-finance.js"></script><script src="/restaurant-pos.js"></script><script src="/pwa-install.js" defer></script><script src="/notifications.js" defer></script><script src="/feedback-launcher.js" defer></script><script src="/ui-dialogs.js" defer></script><script src="/ai-assistant.js" defer></script></body>
 </html>
 

@@ -84,6 +84,7 @@ ensureColumn('restaurants','featured','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('restaurants','operational_status',"TEXT NOT NULL DEFAULT 'open'");
 ensureColumn('restaurants','prep_minutes','INTEGER NOT NULL DEFAULT 30');
 ensureColumn('restaurants','special_hours','TEXT');
+ensureColumn('products','category',"TEXT NOT NULL DEFAULT 'Comida'");
 ensureColumn('directory_entries','priority','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('directory_entries','featured','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('orders','subtotal','REAL');
@@ -93,6 +94,7 @@ ensureColumn('orders','payment_status',"TEXT NOT NULL DEFAULT 'pending'");
 ensureColumn('orders','client_request_id','TEXT');
 ensureColumn('orders','estimated_prep_minutes','INTEGER');
 ensureColumn('orders','is_demo','INTEGER NOT NULL DEFAULT 0');
+ensureColumn('orders','age_confirmed','INTEGER NOT NULL DEFAULT 0');
 
 db.exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_customer_request
@@ -220,6 +222,41 @@ ensureColumn('order_financials','reversal_amount','REAL NOT NULL DEFAULT 0');
 ensureColumn('order_financials','reversed_at','TEXT');
 ensureColumn('order_financials','reversal_reason','TEXT');
 ensureColumn('order_financials','settlement_batch_id','INTEGER');
+ensureColumn('restaurant_members','can_use_pos','INTEGER NOT NULL DEFAULT 0');
+db.exec(`
+CREATE TABLE IF NOT EXISTS pos_sales(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    restaurant_id INTEGER NOT NULL,
+    sold_by_user_id INTEGER,
+    receipt_number TEXT UNIQUE,
+    subtotal REAL NOT NULL,
+    total REAL NOT NULL,
+    payment_method TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'completed',
+    note TEXT,
+    age_confirmed INTEGER NOT NULL DEFAULT 0,
+    client_request_id TEXT NOT NULL UNIQUE,
+    void_reason TEXT,
+    voided_at TEXT,
+    voided_by_user_id INTEGER,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(restaurant_id) REFERENCES restaurants(id),
+    FOREIGN KEY(sold_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY(voided_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE TABLE IF NOT EXISTS pos_sale_items(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sale_id INTEGER NOT NULL,
+    product_id INTEGER,
+    product_name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    unit_price REAL NOT NULL,
+    quantity INTEGER NOT NULL,
+    FOREIGN KEY(sale_id) REFERENCES pos_sales(id) ON DELETE CASCADE,
+    FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pos_sales_restaurant ON pos_sales(restaurant_id,created_at,status);
+`);
 db.prepare('UPDATE restaurant_subscriptions SET registration_fee=50,first_month_fee=100,initial_payment_total=150 WHERE registration_fee=150').run();
 
 if(!db.prepare('SELECT id FROM delivery_zones LIMIT 1').get()){
