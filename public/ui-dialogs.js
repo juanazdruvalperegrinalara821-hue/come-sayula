@@ -15,5 +15,11 @@
     }
     window.alert=message=>{show(message,false)};
     window.csConfirm=message=>show(message,true);
+    window.csPrompt=(title,{label='',value='',type='text',placeholder='',required=false}={})=>new Promise(resolve=>{
+        const layer=document.createElement('div');layer.className='cs-dialog-layer';
+        layer.innerHTML=`<section class="cs-dialog" role="dialog" aria-modal="true"><div class="cs-dialog-icon">✍️</div><h2></h2><p></p><input class="cs-dialog-input" type="${type}" placeholder="${placeholder}" style="width:100%;box-sizing:border-box;margin-top:15px;border:1px solid #d8cbc2;border-radius:12px;padding:13px;font-size:16px"><div class="cs-dialog-actions"><button class="cs-dialog-secondary" type="button">Cancelar</button><button class="cs-dialog-primary" type="button">Continuar</button></div></section>`;
+        layer.querySelector('h2').textContent=String(title||'Completa la información');layer.querySelector('p').textContent=label;const input=layer.querySelector('input');input.value=String(value??'');
+        const finish=result=>{layer.remove();resolve(result)};layer.querySelector('.cs-dialog-secondary').onclick=()=>finish(null);layer.querySelector('.cs-dialog-primary').onclick=()=>{if(required&&!input.value.trim()){input.focus();return}finish(input.value)};input.addEventListener('keydown',event=>{if(event.key==='Enter')layer.querySelector('.cs-dialog-primary').click();if(event.key==='Escape')finish(null)});layer.addEventListener('click',event=>{if(event.target===layer)finish(null)});document.body.appendChild(layer);input.focus();input.select();
+    });
 })();
 
