@@ -305,6 +305,9 @@ header button{
             <select id="productoCategoria" required><option value="Comida">🍽️ Comida</option><option value="Bebidas">🥤 Bebidas</option><option value="Bebidas alcohólicas">🔞 Bebidas alcohólicas</option><option value="Postres">🍰 Postres</option><option value="Extras">➕ Extras</option></select>
             <label class="subir-foto" style="margin:0;text-align:center">📷 Foto del platillo<input id="productoImagen" type="file" accept="image/jpeg,image/png,image/webp" hidden></label>
             <input id="productoDescripcion" class="descripcion" placeholder="Descripción del producto">
+            <label><input id="productoControlStock" type="checkbox"> Controlar existencias</label>
+            <input id="productoExistencias" type="number" min="0" step="1" value="0" placeholder="Existencias">
+            <input id="productoStockMinimo" type="number" min="0" step="1" value="5" placeholder="Avisar cuando queden">
             <button id="botonProducto" type="submit">＋ Guardar producto</button>
         </form>
         <div id="productos" class="productos"></div>
@@ -498,6 +501,7 @@ function mostrarProductos(productos){
             <p style="color:#666">${escapar(producto.description||'Sin descripción')}</p>
             <div class="precio">$${Number(producto.price).toFixed(2)}</div>
             <small>${escapar(producto.category||'Comida')}</small>
+            <small>${producto.stock_enabled?(producto.stock_quantity<=producto.low_stock_threshold?'⚠️ ':'📦 ')+producto.stock_quantity+' disponibles':'📦 Sin control de existencias'}</small>
             <small>${producto.available?'🟢 Disponible':'⚪ No disponible'}</small>
             <div class="producto-acciones">
                 <button class="editar" onclick="editarProducto(${producto.id})">✏️ Editar</button>
@@ -515,7 +519,8 @@ async function guardarProducto(evento){
         const image=archivo?await subirImagen(archivo):imagenProductoActual;
         await solicitudProducto('/api/restaurant/products'+(productoEditandoId?'/'+productoEditandoId:''),productoEditandoId?'PUT':'POST',{
             name:productoNombre.value,description:productoDescripcion.value,
-            price:productoPrecio.value,category:productoCategoria.value,image
+            price:productoPrecio.value,category:productoCategoria.value,image,
+            stockEnabled:productoControlStock.checked,stockQuantity:productoExistencias.value,lowStockThreshold:productoStockMinimo.value
         });
         evento.target.reset();
         productoEditandoId=null;imagenProductoActual='';
@@ -530,6 +535,7 @@ async function editarProducto(id){
     productoEditandoId=id;imagenProductoActual=producto.image||'';
     productoNombre.value=producto.name;productoPrecio.value=producto.price;
     productoCategoria.value=producto.category||'Comida';
+    productoControlStock.checked=Boolean(producto.stock_enabled);productoExistencias.value=producto.stock_quantity||0;productoStockMinimo.value=producto.low_stock_threshold??5;
     productoDescripcion.value=producto.description||'';
     document.getElementById('botonProducto').textContent='💾 Guardar cambios';
     document.querySelector('.form-producto').scrollIntoView({behavior:'smooth',block:'center'});
