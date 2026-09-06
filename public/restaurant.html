@@ -656,6 +656,9 @@ function mostrarPedidos(pedidos){
         const items = pedido.items || [];
 
         const estado = pedido.status || 'received';
+        const momento=pedido.order_timing==='scheduled'&&pedido.scheduled_for
+            ? `<div style="background:#174f86;color:white;padding:13px;border-radius:11px;margin:8px 0 13px;font-weight:bold;font-size:16px">🗓️ PEDIDO PROGRAMADO<br><small>${new Date(pedido.scheduled_for).toLocaleString('es-MX',{timeZone:'America/Mexico_City',dateStyle:'full',timeStyle:'short'})} · hora de Sayula</small></div>`
+            : '<div style="background:#eef8f0;color:#236438;padding:10px;border-radius:10px;margin:8px 0 13px;font-weight:bold">⚡ Pedido inmediato</div>';
 
         const nombresEstado={
             received:'🟠 Recibido',accepted:'👍 Aceptado',preparing:'👨‍🍳 Preparando',ready:'🟢 Listo para recoger',assigned:'🛵 Repartidor asignado',
@@ -698,6 +701,7 @@ function mostrarPedidos(pedidos){
             </h3>
 
             <div class="estado-pedido">${nombresEstado[estado]||estado}</div>
+            ${momento}
 
             <div class="order-info">
 
@@ -908,4 +912,3 @@ if(comprobarAcceso()){
 
 <script src="/restaurant-finance.js"></script><script src="/restaurant-analytics.js"></script><script src="/restaurant-pos.js"></script><script src="/pwa-install.js" defer></script><script src="/notifications.js" defer></script><script src="/feedback-launcher.js" defer></script><script src="/ui-dialogs.js" defer></script><script src="/ai-assistant.js" defer></script></body>
 </html>
-

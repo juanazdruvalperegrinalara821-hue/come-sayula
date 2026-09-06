@@ -101,6 +101,8 @@ ensureColumn('orders','client_request_id','TEXT');
 ensureColumn('orders','estimated_prep_minutes','INTEGER');
 ensureColumn('orders','is_demo','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('orders','age_confirmed','INTEGER NOT NULL DEFAULT 0');
+ensureColumn('orders','order_timing',"TEXT NOT NULL DEFAULT 'immediate'");
+ensureColumn('orders','scheduled_for','TEXT');
 
 db.exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_customer_request
@@ -108,6 +110,7 @@ ON orders(customer_id,client_request_id)
 WHERE client_request_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id,created_at);
 CREATE INDEX IF NOT EXISTS idx_orders_restaurant ON orders(restaurant_id,status);
+CREATE INDEX IF NOT EXISTS idx_orders_scheduled_for ON orders(scheduled_for,status) WHERE scheduled_for IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_delivery_user ON delivery_assignments(delivery_user_id,status);
 CREATE TABLE IF NOT EXISTS audit_logs(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -321,4 +324,3 @@ SELECT id,COALESCE(subtotal,total-COALESCE(delivery_fee,0)),COALESCE(delivery_fe
 db.exec(`UPDATE order_financials SET reversal_amount=total_charged,reversed_at=COALESCE(reversed_at,CURRENT_TIMESTAMP),reversal_reason=COALESCE(reversal_reason,'Migración de pedido cancelado'),restaurant_due=0,courier_due=0,platform_commission=0,payment_status='cancelled',settlement_status='reversed',updated_at=CURRENT_TIMESTAMP WHERE order_id IN (SELECT id FROM orders WHERE status='cancelled') AND settlement_status!='reversed';`);
 
 module.exports = db;
-

@@ -14,6 +14,22 @@ const OPENAI_API_KEY=String(process.env.OPENAI_API_KEY||'').trim();
 const OPENAI_MODEL=String(process.env.OPENAI_MODEL||'gpt-5-mini').trim();
 const ORDER_RESPONSE_MINUTES=Math.min(60,Math.max(3,Number(process.env.ORDER_RESPONSE_MINUTES)||10));
 const PLATFORM_COMMISSION_PERCENT=Math.min(100,Math.max(0,Number(process.env.PLATFORM_COMMISSION_PERCENT)||0));
+const SCHEDULE_MIN_MINUTES=45;
+const SCHEDULE_MAX_DAYS=7;
+const COURIER_SCHEDULE_WINDOW_MINUTES=60;
+const normalizeOrderTiming=body=>{
+    const orderTiming=String(body.orderTiming||'immediate');
+    if(orderTiming==='immediate')return {orderTiming,scheduledFor:null};
+    if(orderTiming!=='scheduled')return {error:'El tipo de pedido no es válido'};
+    const raw=String(body.scheduledFor||'');
+    if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(raw))return {error:'Selecciona una fecha y hora válidas'};
+    const scheduledDate=new Date(raw),delay=scheduledDate.getTime()-Date.now();
+    if(!Number.isFinite(scheduledDate.getTime()))return {error:'Selecciona una fecha y hora válidas'};
+    if(delay<SCHEDULE_MIN_MINUTES*60*1000)return {error:'Los pedidos programados requieren al menos 45 minutos de anticipación'};
+    if(delay>SCHEDULE_MAX_DAYS*24*60*60*1000)return {error:'Sólo puedes programar pedidos dentro de los próximos 7 días'};
+    return {orderTiming,scheduledFor:scheduledDate.toISOString()};
+};
+const canOfferScheduledOrder=order=>!order.scheduled_for||new Date(order.scheduled_for).getTime()<=Date.now()+COURIER_SCHEDULE_WINDOW_MINUTES*60*1000;
 const app=express();
 app.set('trust proxy',process.env.TRUST_PROXY==='1'?1:false);
 const dataDir=process.env.DATA_DIR||__dirname;
@@ -109,12 +125,12 @@ const addNotification=(userId,orderId,type,title,message,targetUrl)=>{if(userId)
 const notifyAdmins=(orderId,type,title,message,url='/admin.html')=>{for(const admin of db.prepare("SELECT id FROM users WHERE role='admin' AND account_status='approved'").all())addNotification(admin.id,orderId,type,title,message,url);};
 const reverseOrderFinancials=(orderId,reason)=>db.prepare("UPDATE order_financials SET reversal_amount=total_charged,reversed_at=CURRENT_TIMESTAMP,reversal_reason=?,restaurant_due=0,courier_due=0,platform_commission=0,payment_status='cancelled',settlement_status='reversed',updated_at=CURRENT_TIMESTAMP WHERE order_id=? AND settlement_status!='reversed'").run(String(reason||'Pedido cancelado').slice(0,300),orderId);
 function notifyOrderStatus(orderId,status,actor){
-    const order=db.prepare('SELECT o.id,o.customer_id,o.restaurant_id,r.owner_id,r.name restaurant_name FROM orders o JOIN restaurants r ON r.id=o.restaurant_id WHERE o.id=?').get(orderId);if(!order)return;
+    const order=db.prepare('SELECT o.id,o.customer_id,o.restaurant_id,o.scheduled_for,r.owner_id,r.name restaurant_name FROM orders o JOIN restaurants r ON r.id=o.restaurant_id WHERE o.id=?').get(orderId);if(!order)return;
     const info={received:['Nuevo pedido','Recibiste un nuevo pedido.','/restaurant.html'],accepted:['Pedido aceptado',`${order.restaurant_name} aceptó tu pedido.`,'/tracking.html?order='+orderId],preparing:['Pedido en preparación','Tu pedido ya se está preparando.','/tracking.html?order='+orderId],ready:['Pedido listo','Tu pedido está listo y busca repartidor.','/tracking.html?order='+orderId],assigned:['Repartidor asignado','Ya hay un repartidor asignado a tu pedido.','/tracking.html?order='+orderId],delivering:['Pedido en camino','Tu pedido salió rumbo a tu domicilio.','/tracking.html?order='+orderId],delivered:['Pedido entregado','Tu pedido fue marcado como entregado.','/home3.html'],cancelled:['Pedido cancelado','El pedido fue cancelado.','/home3.html']}[status];if(!info)return;
     const recipients=new Map();
     if(status==='received'){recipients.set(order.owner_id,'/restaurant.html');for(const member of db.prepare('SELECT user_id FROM restaurant_members WHERE restaurant_id=? AND active=1 AND can_manage_orders=1').all(order.restaurant_id))recipients.set(member.user_id,'/restaurant.html');}
     else recipients.set(order.customer_id,info[2]);
-    if(status==='ready')for(const courier of db.prepare("SELECT u.id FROM users u LEFT JOIN delivery_profiles dp ON dp.delivery_user_id=u.id WHERE u.role='delivery' AND u.account_status='approved' AND COALESCE(dp.status,'offline')='available'").all())recipients.set(courier.id,'/delivery.html');
+    if(status==='ready'&&canOfferScheduledOrder(order))for(const courier of db.prepare("SELECT u.id FROM users u LEFT JOIN delivery_profiles dp ON dp.delivery_user_id=u.id WHERE u.role='delivery' AND u.account_status='approved' AND COALESCE(dp.status,'offline')='available'").all())recipients.set(courier.id,'/delivery.html');
     if(['assigned','delivering','delivered'].includes(status)){recipients.set(order.owner_id,'/restaurant.html');const assignment=db.prepare("SELECT delivery_user_id FROM delivery_assignments WHERE order_id=? AND status IN ('accepted','delivered')").get(orderId);if(assignment)recipients.set(assignment.delivery_user_id,'/delivery.html');}
     for(const [userId,url] of recipients)if(userId!==actor?.id)addNotification(userId,orderId,'order_'+status,info[0],info[1],url);
 }
@@ -137,7 +153,7 @@ function aiContextFor(user){
     }
     if(user.role==='delivery'){
         const assigned=db.prepare("SELECT o.id,o.status,o.payment_method,o.payment_status,o.total,o.created_at,r.name restaurant FROM delivery_assignments da JOIN orders o ON o.id=da.order_id JOIN restaurants r ON r.id=o.restaurant_id WHERE da.delivery_user_id=? ORDER BY o.id DESC LIMIT 20").all(user.id);
-        const available=db.prepare("SELECT o.id,o.status,o.total,o.created_at,r.name restaurant FROM orders o JOIN restaurants r ON r.id=o.restaurant_id LEFT JOIN delivery_assignments da ON da.order_id=o.id WHERE o.status='ready' AND (da.id IS NULL OR da.status='available') ORDER BY o.id LIMIT 20").all();
+        const available=db.prepare("SELECT o.id,o.status,o.total,o.created_at,r.name restaurant FROM orders o JOIN restaurants r ON r.id=o.restaurant_id LEFT JOIN delivery_assignments da ON da.order_id=o.id WHERE o.status='ready' AND (o.scheduled_for IS NULL OR julianday(o.scheduled_for)<=julianday('now','+' || ? || ' minutes')) AND (da.id IS NULL OR da.status='available') ORDER BY o.id LIMIT 20").all(COURIER_SCHEDULE_WINDOW_MINUTES);
         return {myDeliveries:assigned,availableOrders:available};
     }
     const counts={
@@ -274,8 +290,8 @@ app.get('/api/admin/delivery-zones',auth,role(['admin']),(req,res)=>res.json(db.
 app.post('/api/admin/delivery-zones',auth,role(['admin']),(req,res)=>{const name=String(req.body.name||'').trim().slice(0,80),city=String(req.body.city||'Sayula').trim().slice(0,80),min=Number(req.body.minDistanceKm),max=Number(req.body.maxDistanceKm),base=Number(req.body.baseFee),surcharge=Number(req.body.surchargePerKm||0),minimum=Number(req.body.minimumOrder||0);if(!name||![min,max,base,surcharge,minimum].every(Number.isFinite)||min<0||max<=min||base<0||surcharge<0||minimum<0)return res.status(400).json({error:'Datos de zona inválidos'});const result=db.prepare('INSERT INTO delivery_zones(name,city,min_distance_km,max_distance_km,base_fee,surcharge_per_km,minimum_order,available,priority) VALUES(?,?,?,?,?,?,?,?,?)').run(name,city,min,max,base,surcharge,minimum,req.body.available===false?0:1,Number(req.body.priority)||0);audit(req,'delivery_zone_created','delivery_zone',Number(result.lastInsertRowid));res.status(201).json({id:Number(result.lastInsertRowid)});});
 app.patch('/api/admin/delivery-zones/:id',auth,role(['admin']),(req,res)=>{const id=Number(req.params.id),name=String(req.body.name||'').trim().slice(0,80),city=String(req.body.city||'Sayula').trim().slice(0,80),min=Number(req.body.minDistanceKm),max=Number(req.body.maxDistanceKm),base=Number(req.body.baseFee),surcharge=Number(req.body.surchargePerKm||0),minimum=Number(req.body.minimumOrder||0);if(!Number.isInteger(id)||!name||![min,max,base,surcharge,minimum].every(Number.isFinite)||min<0||max<=min||base<0||surcharge<0||minimum<0)return res.status(400).json({error:'Datos de zona inválidos'});const result=db.prepare('UPDATE delivery_zones SET name=?,city=?,min_distance_km=?,max_distance_km=?,base_fee=?,surcharge_per_km=?,minimum_order=?,available=?,priority=? WHERE id=?').run(name,city,min,max,base,surcharge,minimum,req.body.available?1:0,Number(req.body.priority)||0,id);if(result.changes!==1)return res.status(404).json({error:'Zona no encontrada'});audit(req,'delivery_zone_updated','delivery_zone',id);res.json({ok:true});});
 app.get('/api/admin/delivery-couriers',auth,role(['admin']),(req,res)=>res.json(db.prepare("SELECT u.id,u.name,u.phone,COALESCE(dp.status,'offline') status,(SELECT COUNT(*) FROM delivery_assignments da JOIN orders o ON o.id=da.order_id WHERE da.delivery_user_id=u.id AND da.status='accepted' AND o.status IN ('assigned','delivering')) active_orders FROM users u LEFT JOIN delivery_profiles dp ON dp.delivery_user_id=u.id WHERE u.role='delivery' AND u.account_status='approved' ORDER BY status,name").all()));
-app.get('/api/admin/delivery-ready-orders',auth,role(['admin']),(req,res)=>res.json(db.prepare("SELECT o.id,o.total,r.name restaurant_name FROM orders o JOIN restaurants r ON r.id=o.restaurant_id WHERE o.status='ready' ORDER BY o.id").all()));
-app.post('/api/admin/orders/:id/assign',auth,role(['admin']),(req,res)=>{const orderId=Number(req.params.id),courierId=Number(req.body.deliveryUserId);const order=db.prepare("SELECT id,status FROM orders WHERE id=?").get(orderId),courier=db.prepare("SELECT u.id,COALESCE(dp.status,'offline') status FROM users u LEFT JOIN delivery_profiles dp ON dp.delivery_user_id=u.id WHERE u.id=? AND u.role='delivery' AND u.account_status='approved'").get(courierId);if(!order||order.status!=='ready')return res.status(409).json({error:'El pedido no está listo para asignación'});if(!courier||courier.status!=='available')return res.status(409).json({error:'El repartidor no está disponible'});try{db.transaction(()=>{db.prepare("INSERT INTO delivery_assignments(order_id,delivery_user_id,status,accepted_at) VALUES(?,?,'accepted',CURRENT_TIMESTAMP)").run(orderId,courierId);db.prepare("UPDATE orders SET status='assigned' WHERE id=? AND status='ready'").run(orderId);db.prepare("UPDATE delivery_profiles SET status='busy',updated_at=CURRENT_TIMESTAMP WHERE delivery_user_id=?").run(courierId);recordOrderStatus(orderId,'ready','assigned',req.user,'Asignación manual administrativa');})();audit(req,'admin_delivery_assigned','order',orderId);res.json({ok:true,status:'assigned'});}catch(e){res.status(409).json({error:'El pedido ya fue asignado'});}});
+app.get('/api/admin/delivery-ready-orders',auth,role(['admin']),(req,res)=>res.json(db.prepare("SELECT o.id,o.total,r.name restaurant_name FROM orders o JOIN restaurants r ON r.id=o.restaurant_id WHERE o.status='ready' AND (o.scheduled_for IS NULL OR julianday(o.scheduled_for)<=julianday('now','+' || ? || ' minutes')) ORDER BY o.id").all(COURIER_SCHEDULE_WINDOW_MINUTES)));
+app.post('/api/admin/orders/:id/assign',auth,role(['admin']),(req,res)=>{const orderId=Number(req.params.id),courierId=Number(req.body.deliveryUserId);const order=db.prepare("SELECT id,status,scheduled_for FROM orders WHERE id=?").get(orderId),courier=db.prepare("SELECT u.id,COALESCE(dp.status,'offline') status FROM users u LEFT JOIN delivery_profiles dp ON dp.delivery_user_id=u.id WHERE u.id=? AND u.role='delivery' AND u.account_status='approved'").get(courierId);if(!order||order.status!=='ready')return res.status(409).json({error:'El pedido no está listo para asignación'});if(!canOfferScheduledOrder(order))return res.status(409).json({error:'El pedido programado todavía no está disponible para reparto'});if(!courier||courier.status!=='available')return res.status(409).json({error:'El repartidor no está disponible'});try{db.transaction(()=>{db.prepare("INSERT INTO delivery_assignments(order_id,delivery_user_id,status,accepted_at) VALUES(?,?,'accepted',CURRENT_TIMESTAMP)").run(orderId,courierId);db.prepare("UPDATE orders SET status='assigned' WHERE id=? AND status='ready'").run(orderId);db.prepare("UPDATE delivery_profiles SET status='busy',updated_at=CURRENT_TIMESTAMP WHERE delivery_user_id=?").run(courierId);recordOrderStatus(orderId,'ready','assigned',req.user,'Asignación manual administrativa');})();audit(req,'admin_delivery_assigned','order',orderId);res.json({ok:true,status:'assigned'});}catch(e){res.status(409).json({error:'El pedido ya fue asignado'});}});
 
 const feedbackLabels={error:'Error',suggestion:'Sugerencia',complaint:'Inconformidad',praise:'Felicitación'};
 const feedbackStatuses=['received','reviewing','accepted','resolved'];
@@ -415,8 +431,10 @@ app.post('/api/orders',auth,role(['customer']),rateLimit('orders',12,10*60*1000)
     const allowedPayments=['Efectivo','Transferencia','Tarjeta al recibir'];
     if(!restaurantId||!Array.isArray(items)||!items.length||items.length>50||!String(address||'').trim()||!allowedPayments.includes(paymentMethod))return res.status(400).json({error:'Datos del pedido inválidos'});
     if(!/^[a-zA-Z0-9-]{16,80}$/.test(String(clientRequestId||'')))return res.status(400).json({error:'Identificador de pedido inválido'});
-    const existing=db.prepare('SELECT id,total,subtotal,delivery_fee,distance_km,payment_status FROM orders WHERE customer_id=? AND client_request_id=?').get(req.user.id,clientRequestId);
-    if(existing)return res.json({orderId:existing.id,total:existing.total,subtotal:existing.subtotal,deliveryFee:existing.delivery_fee,distanceKm:existing.distance_km,paymentStatus:existing.payment_status,repeated:true});
+    const existing=db.prepare('SELECT id,total,subtotal,delivery_fee,distance_km,payment_status,estimated_prep_minutes,order_timing,scheduled_for FROM orders WHERE customer_id=? AND client_request_id=?').get(req.user.id,clientRequestId);
+    if(existing)return res.json({orderId:existing.id,total:existing.total,subtotal:existing.subtotal,deliveryFee:existing.delivery_fee,distanceKm:existing.distance_km,paymentStatus:existing.payment_status,estimatedPrepMinutes:existing.estimated_prep_minutes,orderTiming:existing.order_timing,scheduledFor:existing.scheduled_for,repeated:true});
+    const timing=normalizeOrderTiming(req.body);
+    if(timing.error)return res.status(400).json({error:timing.error});
     const lat=Number(deliveryLatitude),lng=Number(deliveryLongitude);
     if(!Number.isFinite(lat)||lat < -90||lat > 90||!Number.isFinite(lng)||lng < -180||lng > 180)return res.status(400).json({error:'Selecciona una ubicación válida para la entrega'});
     const restaurant=db.prepare('SELECT id,latitude,longitude,operational_status,prep_minutes FROM restaurants WHERE id=? AND active=1').get(restaurantId);
@@ -433,9 +451,9 @@ app.post('/api/orders',auth,role(['customer']),rateLimit('orders',12,10*60*1000)
     const total=Math.round((subtotal+quote.deliveryFee)*100)/100;
     const paymentStatus=paymentMethod==='Transferencia'?'awaiting_confirmation':'pay_on_delivery';
     const estimatedPrepMinutes=Math.min(180,Math.max(5,Number(restaurant.prep_minutes)||30)+(restaurant.operational_status==='saturated'?20:0));
-    const orderId=db.transaction(()=>{const order=db.prepare('INSERT INTO orders(customer_id,restaurant_id,address,payment_method,total,delivery_latitude,delivery_longitude,subtotal,delivery_fee,distance_km,payment_status,client_request_id,estimated_prep_minutes,age_confirmed) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(req.user.id,restaurantId,String(address).trim().slice(0,500),paymentMethod,total,lat,lng,subtotal,quote.deliveryFee,quote.distanceKm,paymentStatus,clientRequestId,estimatedPrepMinutes,req.body.ageConfirmed?1:0);const id=Number(order.lastInsertRowid),commission=Math.round(subtotal*PLATFORM_COMMISSION_PERCENT)/100;const insert=db.prepare('INSERT INTO order_items(order_id,product_id,product_name,unit_price,quantity,options_description) VALUES(?,?,?,?,?,?)');normalized.forEach(item=>{insert.run(id,item.id,item.name,item.unitPrice,item.quantity,item.optionsDescription);if(item.stock_enabled)db.prepare('UPDATE products SET stock_quantity=stock_quantity-?,available=CASE WHEN stock_quantity-?<=0 THEN 0 ELSE available END WHERE id=?').run(item.quantity,item.quantity,item.id);});db.prepare('INSERT INTO order_financials(order_id,subtotal,delivery_fee,platform_commission,tip,discount,total_charged,payment_method,payment_status,restaurant_due,courier_due) VALUES(?,?,?,?,0,0,?,?,?,?,?)').run(id,subtotal,quote.deliveryFee,commission,total,paymentMethod,paymentStatus,subtotal-commission,quote.deliveryFee);recordOrderStatus(id,null,'received',req.user,'Pedido creado por el cliente');return id;})();
+    const orderId=db.transaction(()=>{const order=db.prepare('INSERT INTO orders(customer_id,restaurant_id,address,payment_method,total,delivery_latitude,delivery_longitude,subtotal,delivery_fee,distance_km,payment_status,client_request_id,estimated_prep_minutes,age_confirmed,order_timing,scheduled_for) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(req.user.id,restaurantId,String(address).trim().slice(0,500),paymentMethod,total,lat,lng,subtotal,quote.deliveryFee,quote.distanceKm,paymentStatus,clientRequestId,estimatedPrepMinutes,req.body.ageConfirmed?1:0,timing.orderTiming,timing.scheduledFor);const id=Number(order.lastInsertRowid),commission=Math.round(subtotal*PLATFORM_COMMISSION_PERCENT)/100;const insert=db.prepare('INSERT INTO order_items(order_id,product_id,product_name,unit_price,quantity,options_description) VALUES(?,?,?,?,?,?)');normalized.forEach(item=>{insert.run(id,item.id,item.name,item.unitPrice,item.quantity,item.optionsDescription);if(item.stock_enabled)db.prepare('UPDATE products SET stock_quantity=stock_quantity-?,available=CASE WHEN stock_quantity-?<=0 THEN 0 ELSE available END WHERE id=?').run(item.quantity,item.quantity,item.id);});db.prepare('INSERT INTO order_financials(order_id,subtotal,delivery_fee,platform_commission,tip,discount,total_charged,payment_method,payment_status,restaurant_due,courier_due) VALUES(?,?,?,?,0,0,?,?,?,?,?)').run(id,subtotal,quote.deliveryFee,commission,total,paymentMethod,paymentStatus,subtotal-commission,quote.deliveryFee);recordOrderStatus(id,null,'received',req.user,timing.orderTiming==='scheduled'?'Pedido programado creado por el cliente':'Pedido inmediato creado por el cliente');return id;})();
     audit(req,'order_created','order',orderId);
-    res.status(201).json({orderId,total,subtotal,deliveryFee:quote.deliveryFee,distanceKm:quote.distanceKm,zoneName:quote.zoneName,paymentStatus,estimatedPrepMinutes});
+    res.status(201).json({orderId,total,subtotal,deliveryFee:quote.deliveryFee,distanceKm:quote.distanceKm,zoneName:quote.zoneName,paymentStatus,estimatedPrepMinutes,orderTiming:timing.orderTiming,scheduledFor:timing.scheduledFor});
 });
 app.get('/api/orders/my',auth,role(['customer']),(req,res)=>{let os=db.prepare(`SELECT o.*,r.name restaurant_name,rv.restaurant_rating,rv.delivery_rating,rv.comment review_comment,rv.tip_amount,rv.tip_method FROM orders o JOIN restaurants r ON r.id=o.restaurant_id LEFT JOIN order_reviews rv ON rv.order_id=o.id WHERE o.customer_id=? ORDER BY o.id DESC`).all(req.user.id);let it=db.prepare('SELECT * FROM order_items WHERE order_id=?');res.json(os.map(o=>({...o,responseDeadline:o.status==='received'?new Date(new Date(o.created_at+'Z').getTime()+ORDER_RESPONSE_MINUTES*60000).toISOString():null,items:it.all(o.id)})))});
 app.get('/api/orders/:id/repeat',auth,role(['customer']),(req,res)=>{const order=db.prepare('SELECT o.id,o.restaurant_id,r.name restaurant_name,r.active,r.operational_status FROM orders o JOIN restaurants r ON r.id=o.restaurant_id WHERE o.id=? AND o.customer_id=?').get(req.params.id,req.user.id);if(!order)return res.status(404).json({error:'Pedido no encontrado'});if(!order.active||['closed','paused'].includes(order.operational_status))return res.status(409).json({error:'El restaurante no está recibiendo pedidos'});const previous=db.prepare('SELECT product_id,quantity,options_description FROM order_items WHERE order_id=?').all(order.id),items=[],warnings=[];for(const old of previous){const p=db.prepare('SELECT id,name,price,category,available,stock_enabled,stock_quantity,variants_json,addons_json FROM products WHERE id=? AND restaurant_id=?').get(old.product_id,order.restaurant_id);if(!p||!p.available){warnings.push('Un producto ya no está disponible');continue}let variants=[],addons=[];try{variants=JSON.parse(p.variants_json||'[]');addons=JSON.parse(p.addons_json||'[]')}catch{}const names=String(old.options_description||'').split(',').map(x=>x.trim()).filter(Boolean),variant=variants.find(v=>names.includes(v.name))?.name||'',selected=addons.filter(a=>names.includes(a.name)).map(a=>a.name);let choice;try{choice=productSelection(p,{variant,addons:selected})}catch{warnings.push(p.name+' cambió sus opciones');continue}const quantity=p.stock_enabled?Math.min(Number(old.quantity),Number(p.stock_quantity)):Number(old.quantity);if(quantity<1){warnings.push(p.name+' está agotado');continue}items.push({id:p.id,name:p.name,price:choice.unitPrice,category:p.category,quantity,restaurantId:order.restaurant_id,restaurantName:order.restaurant_name,variant,addons:selected,optionsDescription:choice.optionsDescription,optionKey:variant+'|'+selected.join('|')});}if(!items.length)return res.status(409).json({error:'Los productos de ese pedido ya no están disponibles'});res.json({items,warnings});});
@@ -717,6 +735,7 @@ app.get('/api/delivery/orders/available',auth,role(['delivery']),(req,res)=>{
         LEFT JOIN delivery_assignments da
             ON da.order_id = o.id
         WHERE o.status = 'ready'
+        AND (o.scheduled_for IS NULL OR julianday(o.scheduled_for)<=julianday('now','+' || ? || ' minutes'))
         AND COALESCE((SELECT status FROM delivery_profiles WHERE delivery_user_id=?),'offline')='available'
         AND NOT EXISTS(SELECT 1 FROM delivery_rejections dr WHERE dr.order_id=o.id AND dr.delivery_user_id=?)
         AND (
@@ -724,7 +743,7 @@ app.get('/api/delivery/orders/available',auth,role(['delivery']),(req,res)=>{
             OR da.status = 'available'
         )
         ORDER BY o.id ASC
-    `).all(req.user.id,req.user.id);
+    `).all(COURIER_SCHEDULE_WINDOW_MINUTES,req.user.id,req.user.id);
 
     const items = db.prepare(`
         SELECT *
@@ -764,7 +783,7 @@ app.post('/api/delivery/orders/:id/accept',auth,role(['delivery']),(req,res)=>{
             if(active)throw new Error('Termina tu entrega activa antes de aceptar otra');
 
             const pedido = db.prepare(`
-                SELECT id,status
+                SELECT id,status,scheduled_for
                 FROM orders
                 WHERE id = ?
             `).get(orderId);
@@ -778,6 +797,7 @@ app.post('/api/delivery/orders/:id/accept',auth,role(['delivery']),(req,res)=>{
                     'El pedido todavía no está listo para entrega'
                 );
             }
+            if(!canOfferScheduledOrder(pedido))throw new Error('El pedido programado todavía no está disponible para reparto');
 
             const existente = db.prepare(`
                 SELECT *
@@ -1048,7 +1068,7 @@ app.get('/api/orders/:id/tracking',auth,role(['customer']),(req,res)=>{
     }
 
     const tracking=db.prepare(`
-        SELECT o.id,o.status,o.address,o.created_at,o.delivery_latitude,o.delivery_longitude,
+        SELECT o.id,o.status,o.address,o.created_at,o.order_timing,o.scheduled_for,o.delivery_latitude,o.delivery_longitude,
                r.name AS restaurant_name,r.address AS restaurant_address,
                u.name AS delivery_name,u.phone AS delivery_phone,
                da.latitude,da.longitude,da.location_accuracy,
@@ -1133,4 +1153,3 @@ app.use((error,req,res,next)=>{console.error('REQUEST ERROR',req.requestId,error
 
 const PORT=Number(process.env.PORT||3000);
 app.listen(PORT,()=>console.log('COME SAYULA: http://localhost:'+PORT));
-

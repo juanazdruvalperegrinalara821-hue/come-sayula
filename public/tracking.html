@@ -50,6 +50,7 @@ async function cargarPedidos(){
             <article class="pedido" id="pedido-${p.id}" onclick="seguir(${p.id})">
                 <div class="fila"><strong>Pedido #${p.id}</strong><strong>$${Number(p.total).toFixed(2)}</strong></div>
                 <div>${escapar(p.restaurant_name)}</div>
+                <div style="font-size:13px;color:#555;margin-top:5px">${textoMomento(p)}</div>
                 <span class="estado">${nombresEstado[p.status]||p.status}</span>
                 ${['delivered','cancelled'].includes(p.status)?`<button onclick="event.stopPropagation();repetirPedido(${p.id})" style="margin-top:9px">🔁 Repetir pedido</button>`:''}
             </article>`).join('');
@@ -81,6 +82,7 @@ async function actualizarSeguimiento(){
             <h2>Pedido #${p.id} · ${nombresEstado[p.status]||p.status}</h2>
             <div class="datos">
                 🍽️ <strong>${escapar(p.restaurant_name)}</strong><br>
+                ${textoMomento(p)}<br>
                 🏠 Entrega: ${escapar(p.address)}<br>
                 🛵 Repartidor: ${escapar(p.delivery_name||'Aún no asignado')}
                 ${p.delivery_phone?'<br>📞 '+escapar(p.delivery_phone):''}
@@ -95,6 +97,7 @@ async function actualizarSeguimiento(){
 }
 
 function cerrarMapaSeguimiento(){if(mapa){try{mapa.remove()}catch(e){}}mapa=null;marcador=null;marcadorDestino=null;lineaRuta=null;}
+function textoMomento(p){return p.order_timing==='scheduled'&&p.scheduled_for?'🗓️ Programado para '+new Date(p.scheduled_for).toLocaleString('es-MX',{timeZone:'America/Mexico_City',dateStyle:'full',timeStyle:'short'})+' · hora de Sayula':'⚡ Entrega lo antes posible';}
 
 function panelFinal(p){
     if(p.status==='cancelled')return '<div class="entrega-lista"><div class="icono">ℹ️</div><h3>Pedido cerrado</h3><p>La ubicación del repartidor ya no está disponible.</p></div>';
@@ -145,4 +148,3 @@ cargarPedidos();
 </script>
 <script src="/pwa-install.js" defer></script><script src="/notifications.js" defer></script><script src="/ui-dialogs.js" defer></script><script src="/ai-assistant.js" defer></script></body>
 </html>
-
