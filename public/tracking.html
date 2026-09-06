@@ -51,12 +51,15 @@ async function cargarPedidos(){
                 <div class="fila"><strong>Pedido #${p.id}</strong><strong>$${Number(p.total).toFixed(2)}</strong></div>
                 <div>${escapar(p.restaurant_name)}</div>
                 <span class="estado">${nombresEstado[p.status]||p.status}</span>
+                ${['delivered','cancelled'].includes(p.status)?`<button onclick="event.stopPropagation();repetirPedido(${p.id})" style="margin-top:9px">🔁 Repetir pedido</button>`:''}
             </article>`).join('');
         const solicitado=Number(new URLSearchParams(location.search).get('order'));
         const primero=pedidos.find(p=>p.id===solicitado)||pedidos.find(p=>p.status==='delivering')||pedidos[0];
         seguir(primero.id);
     }catch(error){document.getElementById('pedidos').textContent='❌ '+error.message;}
 }
+
+async function repetirPedido(id){try{const data=await api('/api/orders/'+id+'/repeat');localStorage.setItem('come_sayula_carrito',JSON.stringify(data.items));const warning=data.warnings?.length?'\n'+data.warnings.join('\n'):'';alert('✅ Pedido agregado nuevamente al carrito.'+warning);location.href='/home3.html'}catch(error){alert('❌ '+error.message)}}
 
 async function seguir(id){
     pedidoActivo=id;

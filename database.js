@@ -293,6 +293,20 @@ CREATE TABLE IF NOT EXISTS cash_movements(
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_cash_movements_session ON cash_movements(cash_session_id,created_at);
+CREATE TABLE IF NOT EXISTS customer_addresses(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    address TEXT NOT NULL,
+    reference TEXT,
+    latitude REAL NOT NULL CHECK(latitude BETWEEN -90 AND 90),
+    longitude REAL NOT NULL CHECK(longitude BETWEEN -180 AND 180),
+    is_default INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(customer_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_customer_addresses_user ON customer_addresses(customer_id,is_default DESC,id DESC);
 `);
 ensureColumn('pos_sale_items','options_description','TEXT');
 ensureColumn('pos_sales','cash_session_id','INTEGER');
