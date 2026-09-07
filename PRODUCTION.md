@@ -6,6 +6,8 @@ Antes del primer arranque define `ADMIN_EMAIL` y `ADMIN_PASSWORD` (mínimo 12 ca
 
 ## Servicios externos pendientes
 
+- Generar una pareja VAPID una sola vez y guardar `VAPID_PUBLIC_KEY` y `VAPID_PRIVATE_KEY` como secretos de Render. La clave privada nunca debe subirse al repositorio. Mantener las mismas claves evita invalidar los teléfonos ya suscritos. Definir también `SUPPORT_EMAIL`, que identifica al responsable del servicio de avisos.
+- Las notificaciones Web Push no requieren Firebase: usan el estándar del navegador y funcionan en Android al conceder permiso. En iPhone es necesario instalar primero la PWA en la pantalla de inicio. Probar la recepción con la aplicación cerrada en teléfonos reales antes del piloto.
 - Configurar un proveedor transaccional de correo o SMS para entregar los enlaces de recuperación. Nunca activar `DEV_SHOW_RESET_TOKEN=1` en producción.
 - Contratar una pasarela de pago. La transferencia actual es conciliación manual: permanece como `awaiting_confirmation` hasta que el restaurante comprueba el depósito.
 - Publicar detrás de un proxy HTTPS, definir `NODE_ENV=production`, `JWT_SECRET` con al menos 48 bytes aleatorios y `TRUST_PROXY=1` únicamente si existe un proxy confiable.
