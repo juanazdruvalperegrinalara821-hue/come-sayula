@@ -14,6 +14,7 @@ Aplicación móvil instalable para pedidos, restaurantes y repartidores locales.
 La base SQLite, imágenes subidas y respaldos se guardan exclusivamente bajo `/var/data`. No desplegar sin disco persistente.
 
 El procedimiento de comprobación y recuperación segura está documentado en `RECOVERY.md`.
+La apertura, cancelaciones, reembolsos, disputas y soporte están documentados en `OPERATIONS.md`.
 
 ## Asistente de IA
 

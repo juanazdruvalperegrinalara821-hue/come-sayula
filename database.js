@@ -69,6 +69,7 @@ ensureColumn('users','email_verified','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('users','phone_verified','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('users','terms_accepted_at','TEXT');
 ensureColumn('users','terms_version','TEXT');
+ensureColumn('users','session_version','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('delivery_assignments','latitude','REAL');
 ensureColumn('delivery_assignments','longitude','REAL');
 ensureColumn('delivery_assignments','location_accuracy','REAL');
