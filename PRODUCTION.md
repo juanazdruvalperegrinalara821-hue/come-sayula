@@ -17,8 +17,9 @@ Antes del primer arranque define `ADMIN_EMAIL` y `ADMIN_PASSWORD` (mínimo 12 ca
 
 - `/api/health` sirve para monitoreo. Conectar este endpoint y los registros del proceso a alertas centralizadas.
 - Las limitaciones de tráfico se guardan en SQLite y sobreviven reinicios. En despliegues con varias instancias deben migrarse a Redis u otro almacén compartido.
-- Los respaldos se crean cada 24 horas en `backups/`, nunca se eliminan automáticamente y deben copiarse cifrados a una ubicación externa. Define una política de conservación antes de limpiar archivos antiguos.
-- Ejecutar `node test-flows.js` después de cambios. Ejecutar `node test-restore.js` para validar el respaldo más reciente.
+- Los respaldos se crean al iniciar y cada 24 horas en `DATA_DIR/backups/`. Cada copia pasa `integrity_check` y se conservan las siete más recientes de forma predeterminada. Ajusta `BACKUP_RETENTION_COUNT` según el espacio disponible y copia respaldos cifrados a una ubicación externa.
+- Ejecutar `npm test` después de cambios. Para validar una copia concreta sin tocar producción, define `BACKUP_FILE` o `BACKUP_DIR` y ejecuta `npm run test:restore`. El procedimiento completo está en `RECOVERY.md`.
+- En `/api/health`, `persistentStorageConfigured` debe ser `true` en Render y `lastBackupAt` debe mostrar una fecha reciente. El panel administrativo de almacenamiento también muestra cantidad de respaldos y retención configurada.
 - Revisar regularmente `audit_logs`, accesos administrativos, transferencias confirmadas y cambios de estado.
 
 ## Lista de salida

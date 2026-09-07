@@ -13,6 +13,8 @@ Aplicación móvil instalable para pedidos, restaurantes y repartidores locales.
 
 La base SQLite, imágenes subidas y respaldos se guardan exclusivamente bajo `/var/data`. No desplegar sin disco persistente.
 
+El procedimiento de comprobación y recuperación segura está documentado en `RECOVERY.md`.
+
 ## Asistente de IA
 
 - Configura `OPENAI_API_KEY` como secreto únicamente en Render; nunca lo guardes en GitHub.
