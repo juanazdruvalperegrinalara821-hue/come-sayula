@@ -274,6 +274,7 @@ header button{
         </div>
 
     </div>
+    <div class="stats" style="grid-template-columns:repeat(3,1fr)"><div class="stat"><strong id="programadosProximos">0</strong>Próximos</div><div class="stat"><strong id="programadosHoy">0</strong>Para hoy</div><div class="stat"><strong id="programadosAtrasados">0</strong>Atrasados</div></div>
 
     <section class="gestion-productos" id="seccionDisponibilidad" style="margin-bottom:20px">
         <div class="cabecera-seccion"><div><h2>🟢 Disponibilidad del negocio</h2><p style="color:#777;margin-top:5px">Controla si puedes recibir pedidos y el tiempo aproximado.</p></div><strong id="estadoOperacion">Cargando…</strong></div>
@@ -615,6 +616,10 @@ function mostrarPedidos(pedidos){
 
     const contenedor =
         document.getElementById('pedidos');
+    const activos=pedidos.filter(p=>p.order_timing==='scheduled'&&!['delivered','cancelled'].includes(p.status)),ahora=new Date(),hoy=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City',year:'numeric',month:'2-digit',day:'2-digit'}).format(ahora);
+    programadosProximos.textContent=activos.filter(p=>new Date(p.scheduled_for)>ahora).length;
+    programadosHoy.textContent=activos.filter(p=>new Intl.DateTimeFormat('en-CA',{timeZone:'America/Mexico_City',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(p.scheduled_for))===hoy).length;
+    programadosAtrasados.textContent=activos.filter(p=>new Date(p.scheduled_for)<ahora).length;
 
     const nuevos =
         pedidos.filter(p => ['received','accepted'].includes(p.status)).length;
@@ -657,7 +662,7 @@ function mostrarPedidos(pedidos){
 
         const estado = pedido.status || 'received';
         const momento=pedido.order_timing==='scheduled'&&pedido.scheduled_for
-            ? `<div style="background:#174f86;color:white;padding:13px;border-radius:11px;margin:8px 0 13px;font-weight:bold;font-size:16px">🗓️ PEDIDO PROGRAMADO<br><small>${new Date(pedido.scheduled_for).toLocaleString('es-MX',{timeZone:'America/Mexico_City',dateStyle:'full',timeStyle:'short'})} · hora de Sayula</small></div>`
+            ? `<div style="background:${new Date(pedido.scheduled_for)<new Date()?'#991b1b':'#174f86'};color:white;padding:13px;border-radius:11px;margin:8px 0 13px;font-weight:bold;font-size:16px">🗓️ PEDIDO PROGRAMADO<br><small>${new Date(pedido.scheduled_for).toLocaleString('es-MX',{timeZone:'America/Mexico_City',dateStyle:'full',timeStyle:'short'})} · hora de Sayula</small>${pedido.prep_start_at?`<br><small>Comenzar preparación: ${new Date(pedido.prep_start_at).toLocaleTimeString('es-MX',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit'})}</small>`:''}</div>`
             : '<div style="background:#eef8f0;color:#236438;padding:10px;border-radius:10px;margin:8px 0 13px;font-weight:bold">⚡ Pedido inmediato</div>';
 
         const nombresEstado={
@@ -669,9 +674,9 @@ function mostrarPedidos(pedidos){
         if(estado==='received'){
             controlEstado=`<div class="acciones-estado"><button onclick="cambiarEstado(${pedido.id},'accepted')">👍 Aceptar pedido</button><button class="cancelar" onclick="cambiarEstado(${pedido.id},'cancelled')">Cancelar pedido</button></div>`;
         }else if(estado==='accepted'){
-            controlEstado=`<div class="acciones-estado"><button onclick="cambiarEstado(${pedido.id},'preparing')">👨‍🍳 Comenzar preparación</button><button class="cancelar" onclick="cambiarEstado(${pedido.id},'cancelled')">Cancelar pedido</button></div>`;
+            controlEstado=pedido.prep_start_at&&Date.now()<new Date(pedido.prep_start_at).getTime()?`<div class="bloqueado">⏰ Preparación programada para ${new Date(pedido.prep_start_at).toLocaleTimeString('es-MX',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit'})}</div>`:`<div class="acciones-estado"><button onclick="cambiarEstado(${pedido.id},'preparing')">👨‍🍳 Comenzar preparación</button><button class="cancelar" onclick="cambiarEstado(${pedido.id},'cancelled')">Cancelar pedido</button></div>`;
         }else if(estado==='preparing'){
-            controlEstado=`<div class="acciones-estado"><button onclick="cambiarEstado(${pedido.id},'ready')">✅ Pedido listo para recoger</button><button class="cancelar" onclick="cambiarEstado(${pedido.id},'cancelled')">Cancelar pedido</button></div>`;
+            controlEstado=pedido.scheduled_for&&Date.now()<new Date(pedido.scheduled_for).getTime()-60*60*1000?'<div class="bloqueado">⏰ Aún es pronto para marcar este pedido como listo</div>':`<div class="acciones-estado"><button onclick="cambiarEstado(${pedido.id},'ready')">✅ Pedido listo para recoger</button><button class="cancelar" onclick="cambiarEstado(${pedido.id},'cancelled')">Cancelar pedido</button></div>`;
         }else if(estado==='ready'&&pedido.delivery_assigned){
             controlEstado='<div class="bloqueado">🔒 Repartidor asignado<br><small>Esperando que confirme la recogida</small></div>';
         }else if(estado==='ready'){
