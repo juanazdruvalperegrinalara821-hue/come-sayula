@@ -299,6 +299,8 @@ main{
     margin-bottom:3px;
 }
 
+.account-overlay{position:fixed;inset:0;background:#24150da8;z-index:1200;display:none;align-items:flex-end;justify-content:center;padding:18px}.account-overlay.visible{display:flex}.account-panel{width:min(480px,100%);background:#fff;border-radius:24px;padding:24px;box-shadow:0 20px 60px #0005}.account-panel h2{margin:0 0 8px}.account-user{background:#fff6ee;border-radius:14px;padding:13px;margin:14px 0 18px;overflow-wrap:anywhere}.account-actions{display:grid;gap:10px}.account-actions button{width:100%;border:1px solid #eadfd6;border-radius:13px;background:#fff;padding:14px;text-align:left;font-weight:bold;cursor:pointer}.account-actions .primary{background:#e85d04;color:#fff;border-color:#e85d04}.account-actions .danger{color:#a52121}.account-close{margin-top:13px;width:100%;border:0;background:#eee;padding:12px;border-radius:12px;cursor:pointer}
+
 @media(max-width:800px){
 
     .header{
@@ -517,6 +519,8 @@ No encontramos restaurantes con esa búsqueda.
 </section>
 
 </main>
+
+<div id="panelCuenta" class="account-overlay" onclick="if(event.target===this)cerrarPanelCuenta()"><section class="account-panel" role="dialog" aria-modal="true" aria-labelledby="tituloCuenta"><h2 id="tituloCuenta">👤 Mi cuenta</h2><div id="datosCuenta" class="account-user"></div><div id="accionesCuenta" class="account-actions"></div><button class="account-close" onclick="cerrarPanelCuenta()">Cerrar panel</button></section></div>
 
 <nav class="bottom-nav">
 
@@ -1853,90 +1857,16 @@ function cuenta(){
     );
 
     if(token && usuario){
-
-        const nombre =
-            usuario.name ||
-            usuario.username ||
-            'Usuario';
-
-        const correo =
-            usuario.email ||
-            'No disponible';
-
-        let menuCuenta =
-            '👤 MI CUENTA\n\n' +
-            'Usuario: ' + nombre + '\n' +
-            'Correo: ' + correo + '\n\n';
-
-        // 🍽️ CUENTA DEL RESTAURANTE
-        if(['restaurant','restaurant_employee'].includes(usuario.role)){
-
-            menuCuenta +=
-                '🍽️ 1 = Panel del restaurante\n' +
-                '🚪 2 = Cerrar sesión\n' +
-                '❌ 3 = Cancelar';
-
-            const opcion = prompt(menuCuenta);
-
-            if(opcion === '1'){
-
-                location.href = '/restaurant.html';
-
-            }else if(opcion === '2'){
-
-                cerrarSesion();
-
-            }
-
-            return;
-        }
-
-        // 🛵 CUENTA DEL REPARTIDOR
-        if(usuario.role === 'delivery'){
-
-            menuCuenta +=
-                '🛵 1 = Panel de repartidor\n' +
-                '🚪 2 = Cerrar sesión\n' +
-                '❌ 3 = Cancelar';
-
-            const opcion = prompt(menuCuenta);
-
-            if(opcion === '1'){
-
-                location.href = '/delivery.html';
-
-            }else if(opcion === '2'){
-
-                cerrarSesion();
-
-            }
-
-            return;
-        }
-
-        // 👤 CUENTA DEL CLIENTE
-        menuCuenta +=
-            '📍 1 = Mis pedidos y seguimiento\n' +
-            '🚪 2 = Cerrar sesión\n' +
-            '❌ 3 = Cancelar';
-
-        const opcion = prompt(menuCuenta);
-
-        if(opcion === '1'){
-
-            location.href = '/tracking.html';
-
-        }else if(opcion === '2'){
-
-            cerrarSesion();
-
-        }
-
+        datosCuenta.innerHTML='<strong>'+escapar(usuario.name||usuario.username||'Usuario')+'</strong><br><small>'+escapar(usuario.email||'Correo no disponible')+'</small>';
+        const panelPorRol={restaurant:"<button class='primary' onclick=\"location.href='/restaurant.html'\">🍽️ Panel del restaurante</button>",restaurant_employee:"<button class='primary' onclick=\"location.href='/restaurant.html'\">🍽️ Panel del restaurante</button>",delivery:"<button class='primary' onclick=\"location.href='/delivery.html'\">🛵 Panel del repartidor</button>",admin:"<button class='primary' onclick=\"location.href='/admin.html'\">🛡️ Panel administrativo</button>"};
+        accionesCuenta.innerHTML=(panelPorRol[usuario.role]||"<button class='primary' onclick=\"location.href='/tracking.html'\">📍 Mis pedidos y seguimiento</button>")+"<button onclick=\"location.href='/account.html'\">🔐 Seguridad y contraseña</button><button class='danger' onclick='cerrarSesion()'>🚪 Cerrar sesión</button>";
+        panelCuenta.classList.add('visible');
         return;
     }
 
     location.href = '/auth.html';
 }
+function cerrarPanelCuenta(){panelCuenta.classList.remove('visible')}
 function iniciarConGoogle(){
 
     if(!window.google || !google.accounts){
