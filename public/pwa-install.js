@@ -1,5 +1,6 @@
 (()=>{
   if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1'))navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  addEventListener('DOMContentLoaded',()=>{if(['/auth.html','/reset-password.html','/account.html'].includes(location.pathname)||!sessionStorage.getItem('cs_token'))return;const header=document.querySelector('header');if(!header||document.getElementById('miCuenta'))return;const link=document.createElement('a');link.id='miCuenta';link.href='/account.html';link.textContent='🔐 Mi cuenta';link.style.cssText='color:inherit;text-decoration:none;border:1px solid currentColor;border-radius:9px;padding:9px 12px;font-weight:bold;margin-left:auto';const logout=[...header.querySelectorAll('button,a')].find(node=>/cerrar sesión|salir/i.test(node.textContent));header.insertBefore(link,logout||null);});
   if(matchMedia('(display-mode: standalone)').matches||navigator.standalone)return;
   let promptInstalacion=null;
   const esIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);

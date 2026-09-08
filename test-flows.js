@@ -18,6 +18,8 @@ async function run(){
   const reset=await api('/api/auth/reset-password',{method:'POST',body:{token:forgotten.data.developmentToken,password:'Cliente-Nueva-2026'}});ok(reset.status===200,'enlace válido cambia la contraseña');
   const oldSession=await api('/api/orders/my',{token:previousCustomerToken}),reusedReset=await api('/api/auth/reset-password',{method:'POST',body:{token:forgotten.data.developmentToken,password:'Otra-Clave-2026'}});ok(oldSession.status===401&&reusedReset.status===400,'cambio invalida sesiones anteriores y el enlace sólo se usa una vez');
   customer.data.token=await login('cliente@test.local','Cliente-Nueva-2026','customer');
+  const customerTokenBeforeChange=customer.data.token,ownPassword=await api('/api/auth/password',{token:customer.data.token,method:'PATCH',body:{currentPassword:'Cliente-Nueva-2026',newPassword:'Cliente-Final-2026'}});ok(ownPassword.status===200&&ownPassword.data.token,'cliente cambia su propia contraseña y recibe una sesión nueva');
+  const previousOwnSession=await api('/api/orders/my',{token:customerTokenBeforeChange});ok(previousOwnSession.status===401,'cambio propio cierra las demás sesiones');customer.data.token=ownPassword.data.token;
   const aiStatus=await api('/api/ai/status',{token:admin});ok(aiStatus.status===200&&aiStatus.data.enabled===false,'asistente informa cuando falta configuración');
   const aiUnavailable=await api('/api/ai/chat',{token:admin,method:'POST',body:{message:'Resume la operación'}});ok(aiUnavailable.status===503,'asistente falla de forma segura sin clave');
   const pushKey=await api('/api/push/public-key',{token:admin});ok(pushKey.status===200&&typeof pushKey.data.publicKey==='string'&&pushKey.data.publicKey.length>40,'servidor prepara notificaciones móviles cifradas');

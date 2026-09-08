@@ -242,6 +242,17 @@ app.post('/api/auth/reset-password',rateLimit('reset-password',8,30*60*1000),asy
     db.transaction(()=>{db.prepare('UPDATE users SET password_hash=?,session_version=session_version+1 WHERE id=?').run(bcrypt.hashSync(password,12),record.user_id);db.prepare('UPDATE password_reset_tokens SET used_at=CURRENT_TIMESTAMP WHERE id=?').run(record.id);})();
     audit(req,'password_reset_completed','user',record.user_id);res.json({ok:true});
 });
+app.patch('/api/auth/password',auth,rateLimit('change-password',8,30*60*1000),async(req,res)=>{
+    const currentPassword=String(req.body.currentPassword||''),newPassword=String(req.body.newPassword||'');
+    if(newPassword.length<10)return res.status(400).json({error:'La contraseña nueva debe tener al menos 10 caracteres'});
+    if(currentPassword===newPassword)return res.status(400).json({error:'La contraseña nueva debe ser diferente'});
+    const user=db.prepare('SELECT * FROM users WHERE id=?').get(req.user.id);
+    if(!user||!(await bcrypt.compare(currentPassword,user.password_hash)))return res.status(401).json({error:'La contraseña actual no es correcta'});
+    db.prepare('UPDATE users SET password_hash=?,session_version=session_version+1 WHERE id=?').run(await bcrypt.hash(newPassword,12),user.id);
+    db.prepare('UPDATE password_reset_tokens SET used_at=CURRENT_TIMESTAMP WHERE user_id=? AND used_at IS NULL').run(user.id);
+    const updated=db.prepare('SELECT * FROM users WHERE id=?').get(user.id);audit(req,'password_changed','user',user.id);
+    res.json({ok:true,message:'Contraseña actualizada. Las demás sesiones fueron cerradas.',token:signToken(updated),user:publicUser(updated)});
+});
 app.get('/api/notifications',auth,(req,res)=>{const after=Math.max(0,Number(req.query.after)||0);const rows=db.prepare('SELECT id,order_id,type,title,message,target_url,read_at,created_at FROM notifications WHERE user_id=? AND id>? ORDER BY id DESC LIMIT 50').all(req.user.id,after);const unread=db.prepare('SELECT COUNT(*) total FROM notifications WHERE user_id=? AND read_at IS NULL').get(req.user.id).total;res.json({notifications:rows,unread});});
 app.patch('/api/notifications/read',auth,(req,res)=>{const id=req.body.id==null?null:Number(req.body.id);if(id!==null&&(!Number.isInteger(id)||id<=0))return res.status(400).json({error:'Notificación inválida'});if(id===null)db.prepare('UPDATE notifications SET read_at=CURRENT_TIMESTAMP WHERE user_id=? AND read_at IS NULL').run(req.user.id);else db.prepare('UPDATE notifications SET read_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?').run(id,req.user.id);res.json({ok:true});});
 app.get('/api/push/public-key',auth,(req,res)=>res.json({publicKey:vapidKeys.publicKey}));
