@@ -1,5 +1,12 @@
 # Operación del piloto de COME SAYULA
 
+## Mercado Pago en pruebas
+
+- El cliente sale a Checkout Pro; COME SAYULA no solicita ni almacena números de tarjeta.
+- Mientras el pago diga `awaiting_online_payment`, el restaurante no ve ni puede procesar el pedido.
+- La página de retorno y el webhook consultan la API de Mercado Pago y comparan estado aprobado, referencia, moneda MXN y total exacto antes de liberar el pedido.
+- Las credenciales de prueba no deben sustituirse por producción ni debe activarse `PAYMENT_PROVIDER_ENABLED` sin autorización del propietario.
+
 Responsable operativo: Juan Azdruval Peregrina Lara. Soporte: juanazdruvalperegrinalara821@gmail.com y +52 312 112 4003, de lunes a sábado de 9:00 a 20:00 (hora de Sayula, Jalisco). El primer seguimiento debe proporcionarse en un máximo de dos días hábiles; incidentes de seguridad, cargos desconocidos o riesgo físico se priorizan de inmediato.
 
 ## Cancelaciones

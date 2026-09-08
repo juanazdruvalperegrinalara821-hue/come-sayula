@@ -104,6 +104,16 @@ ensureColumn('orders','is_demo','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('orders','age_confirmed','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('orders','order_timing',"TEXT NOT NULL DEFAULT 'immediate'");
 ensureColumn('orders','scheduled_for','TEXT');
+ensureColumn('orders','payment_provider','TEXT');
+ensureColumn('orders','provider_preference_id','TEXT');
+ensureColumn('orders','provider_checkout_url','TEXT');
+ensureColumn('orders','provider_payment_id','TEXT');
+ensureColumn('orders','payment_expires_at','TEXT');
+ensureColumn('orders','payment_provider','TEXT');
+ensureColumn('orders','provider_preference_id','TEXT');
+ensureColumn('orders','provider_checkout_url','TEXT');
+ensureColumn('orders','provider_payment_id','TEXT');
+ensureColumn('orders','payment_expires_at','TEXT');
 
 db.exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_customer_request
@@ -112,6 +122,10 @@ WHERE client_request_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id,created_at);
 CREATE INDEX IF NOT EXISTS idx_orders_restaurant ON orders(restaurant_id,status);
 CREATE INDEX IF NOT EXISTS idx_orders_scheduled_for ON orders(scheduled_for,status) WHERE scheduled_for IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_provider_preference ON orders(provider_preference_id) WHERE provider_preference_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_provider_payment ON orders(provider_payment_id) WHERE provider_payment_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_provider_preference ON orders(provider_preference_id) WHERE provider_preference_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_provider_payment ON orders(provider_payment_id) WHERE provider_payment_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_delivery_user ON delivery_assignments(delivery_user_id,status);
 CREATE TABLE IF NOT EXISTS audit_logs(
     id INTEGER PRIMARY KEY AUTOINCREMENT,

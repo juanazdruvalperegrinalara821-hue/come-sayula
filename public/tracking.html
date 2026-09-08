@@ -52,6 +52,7 @@ async function cargarPedidos(){
                 <div>${escapar(p.restaurant_name)}</div>
                 <div style="font-size:13px;color:#555;margin-top:5px">${textoMomento(p)}</div>
                 <span class="estado">${nombresEstado[p.status]||p.status}</span>
+                ${p.payment_status==='awaiting_online_payment'?`<div style="margin-top:8px;color:#8a5500;font-weight:bold">⏳ Falta completar el pago de prueba</div>`:''}
                 ${['delivered','cancelled'].includes(p.status)?`<button onclick="event.stopPropagation();repetirPedido(${p.id})" style="margin-top:9px">🔁 Repetir pedido</button>`:''}
             </article>`).join('');
         const solicitado=Number(new URLSearchParams(location.search).get('order'));
@@ -88,6 +89,7 @@ async function actualizarSeguimiento(){
                 ${p.delivery_phone?'<br>📞 '+escapar(p.delivery_phone):''}
                 ${p.delivery_pin?'<div style="margin-top:12px;background:#fff3cd;padding:12px;border-radius:10px"><strong>🔐 Código de entrega: <span style="font-size:24px;letter-spacing:5px">'+p.delivery_pin+'</span></strong><br><small>Díselo al repartidor únicamente cuando recibas tu pedido.</small></div>':''}
             </div>
+            ${p.payment_status==='awaiting_online_payment'?`<div class="entrega-lista"><div class="icono">💳</div><h3>Pago pendiente</h3><p>El restaurante recibirá el pedido únicamente después de que Mercado Pago confirme la aprobación.</p><button onclick="location.href='${escapar(p.provider_checkout_url||'/home3.html')}'" style="width:100%;padding:13px;border:0;border-radius:11px;background:#1683e2;color:white;font-weight:bold">Continuar pago de prueba</button></div>`:''}
             <div class="actualizacion">${mensajeUbicacion(p,tieneUbicacion)}</div>
             ${p.status==='received'&&p.responseDeadline?`<div class="actualizacion">⏳ Esperando confirmación del restaurante.</div><button style="display:${Date.now()>=new Date(p.responseDeadline).getTime()?'block':'none'};width:100%;padding:12px;border:0;border-radius:10px;background:#a61b1b;color:white;font-weight:bold" onclick="cancelarSinRespuesta(${p.id})">Cancelar sin penalización</button>`:''}
             ${finalizado?panelFinal(p):`<div id="resumenRuta" class="actualizacion"></div><div id="mapa"><div class="espera">${tieneUbicacion?'Cargando mapa…':'El mapa aparecerá cuando el repartidor comparta su ubicación.'}</div></div>`}`;
