@@ -13,6 +13,10 @@ const GOOGLE_CLIENT_ID=process.env.GOOGLE_CLIENT_ID||"846821366103-clbjraiah8qvd
 const googleClient=new OAuth2Client(GOOGLE_CLIENT_ID);
 const OPENAI_API_KEY=String(process.env.OPENAI_API_KEY||'').trim();
 const OPENAI_MODEL=String(process.env.OPENAI_MODEL||'gpt-5-mini').trim();
+const SENDGRID_API_KEY=String(process.env.SENDGRID_API_KEY||'').trim();
+const SENDGRID_FROM_EMAIL=String(process.env.SENDGRID_FROM_EMAIL||'').trim().toLowerCase();
+const SENDGRID_FROM_NAME=String(process.env.SENDGRID_FROM_NAME||'COME SAYULA').trim().slice(0,100)||'COME SAYULA';
+const SENDGRID_API_URL=String(process.env.SENDGRID_API_URL||'https://api.sendgrid.com/v3/mail/send').trim();
 const ORDER_RESPONSE_MINUTES=Math.min(60,Math.max(3,Number(process.env.ORDER_RESPONSE_MINUTES)||10));
 const NOTIFICATION_WORKER_INTERVAL_MS=Math.max(100,Number(process.env.NOTIFICATION_WORKER_INTERVAL_MS)||60*1000);
 const ORDER_RATE_LIMIT_MAX=Math.min(200,Math.max(12,Number(process.env.ORDER_RATE_LIMIT_MAX)||12));
@@ -202,6 +206,20 @@ async function openAIRequest(pathname,body){
         return data;
     }finally{clearTimeout(timeout);}
 }
+const sendgridConfigured=()=>SENDGRID_API_KEY.startsWith('SG.')&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(SENDGRID_FROM_EMAIL);
+const publicAppBase=req=>{
+    const configured=String(process.env.APP_BASE_URL||process.env.RENDER_EXTERNAL_URL||'').trim().replace(/\/$/,'');
+    if(/^https:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(configured))return configured;
+    if(process.env.NODE_ENV!=='production')return `${req.protocol}://${req.get('host')}`;
+    return 'https://come-sayula.onrender.com';
+};
+async function sendPasswordResetEmail(email,resetUrl){
+    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
+    try{
+        const response=await fetch(SENDGRID_API_URL,{method:'POST',headers:{Authorization:'Bearer '+SENDGRID_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({personalizations:[{to:[{email}]}],from:{email:SENDGRID_FROM_EMAIL,name:SENDGRID_FROM_NAME},subject:'Recupera tu acceso a COME SAYULA',content:[{type:'text/plain',value:`Solicitaste cambiar tu contraseña de COME SAYULA. Abre este enlace dentro de los próximos 30 minutos:\n\n${resetUrl}\n\nSi no hiciste esta solicitud, ignora este mensaje.`},{type:'text/html',value:`<p>Solicitaste cambiar tu contraseña de COME SAYULA.</p><p><a href="${resetUrl}">Cambiar mi contraseña</a></p><p>El enlace vence en 30 minutos y sólo puede utilizarse una vez.</p><p>Si no hiciste esta solicitud, ignora este mensaje.</p>`}]}),signal:controller.signal});
+        if(!response.ok)throw new Error('SendGrid respondió con estado '+response.status);
+    }finally{clearTimeout(timeout);}
+}
 app.post('/api/auth/register',rateLimit('register',8,15*60*1000),async(req,res)=>{try{const{name,phone,password}=req.body;const email=normalizeEmail(req.body.email);if(!name||!email||!password||String(password).length<10)return res.status(400).json({error:'Completa los datos y usa una contraseña de al menos 10 caracteres'});if(req.body.termsAccepted!==true)return res.status(400).json({error:'Debes aceptar los términos y el aviso de privacidad'});if(req.body.role&&req.body.role!=='customer')return res.status(403).json({error:'El registro público está disponible únicamente para clientes'});if(db.prepare('SELECT id FROM users WHERE email=?').get(email))return res.status(409).json({error:'No fue posible registrar esa cuenta'});const r=db.prepare("INSERT INTO users(name,email,phone,password_hash,role,account_status,terms_accepted_at,terms_version) VALUES(?,?,?,?,'customer','approved',CURRENT_TIMESTAMP,'2026-09-02')").run(String(name).trim().slice(0,100),email,String(phone||'').trim().slice(0,30),await bcrypt.hash(password,12));const u=db.prepare('SELECT id,name,email,phone,role,account_status,session_version FROM users WHERE id=?').get(r.lastInsertRowid);audit({user:u,ip:req.ip},'customer_registered','user',u.id);res.status(201).json({token:signToken(u),user:publicUser(u)})}catch(e){console.error(e);res.status(500).json({error:'No fue posible crear la cuenta'})}});
 app.post('/api/auth/login',rateLimit('login',10,15*60*1000),async(req,res)=>{
     const email=(req.body.email||'').trim().toLowerCase();
@@ -219,7 +237,7 @@ app.post('/api/auth/login',rateLimit('login',10,15*60*1000),async(req,res)=>{
     const sessionUser=publicUser(user);
     res.json({token:signToken(user),user:sessionUser});
 });
-app.post('/api/auth/forgot-password',rateLimit('forgot-password',5,30*60*1000),(req,res)=>{
+app.post('/api/auth/forgot-password',rateLimit('forgot-password',5,30*60*1000),async(req,res)=>{
     const email=normalizeEmail(req.body.email);
     const user=db.prepare("SELECT id FROM users WHERE email=? AND account_status='approved'").get(email);
     let developmentToken;
@@ -229,8 +247,11 @@ app.post('/api/auth/forgot-password',rateLimit('forgot-password',5,30*60*1000),(
         db.prepare("UPDATE password_reset_tokens SET used_at=CURRENT_TIMESTAMP WHERE user_id=? AND used_at IS NULL").run(user.id);
         db.prepare("INSERT INTO password_reset_tokens(user_id,token_hash,expires_at) VALUES(?,?,datetime('now','+30 minutes'))").run(user.id,hash);
         audit(req,'password_reset_requested','user',user.id);
-        if(process.env.NODE_ENV!=='production'&&process.env.DEV_SHOW_RESET_TOKEN==='1')developmentToken=token;
-        else console.log('Recuperación solicitada para '+email+'. Configura un proveedor de correo/SMS para enviar el enlace.');
+        if(sendgridConfigured()){
+            try{await sendPasswordResetEmail(email,publicAppBase(req)+'/reset-password.html?token='+encodeURIComponent(token));audit(req,'password_reset_email_sent','user',user.id);}
+            catch(error){db.prepare('UPDATE password_reset_tokens SET used_at=CURRENT_TIMESTAMP WHERE token_hash=?').run(hash);console.error('SENDGRID ERROR',req.requestId,error.name==='AbortError'?'tiempo agotado':String(error.message).slice(0,180));}
+        }else if(process.env.NODE_ENV!=='production'&&process.env.DEV_SHOW_RESET_TOKEN==='1')developmentToken=token;
+        else console.warn('Recuperación solicitada, pero el proveedor de correo no está configurado. Solicitud '+req.requestId);
     }
     res.json({message:'Si la cuenta existe, enviaremos instrucciones para recuperar el acceso.',developmentToken});
 });
@@ -265,7 +286,7 @@ app.get('/api/admin/pilot-readiness',auth,role(['admin']),(req,res)=>{const chec
     {key:'notifications',label:'Notificaciones móviles configuradas',ready:Boolean(vapidKeys.publicKey)},
     {key:'backups',label:'Respaldos automáticos habilitados',ready:process.env.DISABLE_AUTOMATIC_BACKUP!=='1'},
     {key:'security',label:'Secreto de sesiones de producción configurado',ready:String(process.env.JWT_SECRET||'').length>=48},
-    {key:'verification',label:'Proveedor de correo o SMS configurado',ready:process.env.ACCOUNT_MESSAGE_PROVIDER_ENABLED==='1'},
+    {key:'verification',label:'Proveedor de correo o SMS configurado',ready:process.env.ACCOUNT_MESSAGE_PROVIDER_ENABLED==='1'&&sendgridConfigured()},
     {key:'legal',label:'Datos legales y de privacidad confirmados',ready:process.env.LEGAL_DOCUMENTS_APPROVED==='1'},
     {key:'support',label:'Correo formal de soporte configurado',ready:Boolean(process.env.SUPPORT_EMAIL)},
     {key:'payment',label:'Proveedor de cobro en línea configurado',ready:Boolean(process.env.PAYMENT_PROVIDER_ENABLED==='1')}
