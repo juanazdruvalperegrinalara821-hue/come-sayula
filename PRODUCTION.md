@@ -24,7 +24,7 @@ Antes del primer arranque define `ADMIN_EMAIL` y `ADMIN_PASSWORD` (mínimo 12 ca
 - En `/api/health`, `persistentStorageConfigured` debe ser `true` en Render y `lastBackupAt` debe mostrar una fecha reciente. El panel administrativo de almacenamiento también muestra cantidad de respaldos y retención configurada.
 - Revisar regularmente `audit_logs`, accesos administrativos, transferencias confirmadas y cambios de estado.
 - El panel administrativo permite consultar los registros recientes de auditoría. El procedimiento diario, cancelaciones, reembolsos y escalamiento está en `OPERATIONS.md`.
-- Completar y revisar localmente `/legal.html`; sólo después de aprobación jurídica y de configurar datos reales puede establecerse `LEGAL_DOCUMENTS_APPROVED=1`.
+- `/legal.html` contiene los datos confirmados del responsable, contacto, conservación, derechos ARCO y términos del piloto, versión 2026-09-08. Obtener revisión profesional antes de una apertura pública o de habilitar cobros en línea. Establecer `LEGAL_DOCUMENTS_APPROVED=1` únicamente después de revisar la versión publicada y confirmar que coincide con la operación real.
 
 ## Lista de salida
 

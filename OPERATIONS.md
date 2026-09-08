@@ -1,6 +1,6 @@
 # Operación del piloto de COME SAYULA
 
-Este procedimiento debe completarse con los datos del responsable, horarios y medios reales de soporte antes de abrir el servicio al público.
+Responsable operativo: Juan Azdruval Peregrina Lara. Soporte: juanazdruvalperegrinalara821@gmail.com y +52 312 112 4003, de lunes a sábado de 9:00 a 20:00 (hora de Sayula, Jalisco). El primer seguimiento debe proporcionarse en un máximo de dos días hábiles; incidentes de seguridad, cargos desconocidos o riesgo físico se priorizan de inmediato.
 
 ## Cancelaciones
 
