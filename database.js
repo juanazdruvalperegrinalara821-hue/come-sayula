@@ -389,6 +389,36 @@ CREATE TABLE IF NOT EXISTS courier_cash_settlements(
     FOREIGN KEY(settled_by_user_id) REFERENCES users(id)
 );
 CREATE INDEX IF NOT EXISTS idx_courier_cash_settlements_status ON courier_cash_settlements(status,reported_at);
+CREATE TABLE IF NOT EXISTS trust_profiles(
+    user_id INTEGER PRIMARY KEY,
+    score INTEGER NOT NULL DEFAULT 50 CHECK(score BETWEEN 0 AND 100),
+    level TEXT NOT NULL DEFAULT 'standard' CHECK(level IN ('new','standard','trusted','review')),
+    positive_events INTEGER NOT NULL DEFAULT 0,
+    negative_events INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS order_risk_assessments(
+    order_id INTEGER PRIMARY KEY,
+    customer_id INTEGER NOT NULL,
+    score INTEGER NOT NULL CHECK(score BETWEEN 0 AND 100),
+    level TEXT NOT NULL CHECK(level IN ('normal','warning','verification','prepaid_review')),
+    action TEXT NOT NULL,
+    signals_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY(customer_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_order_risk_admin ON order_risk_assessments(level,score,created_at);
+CREATE TABLE IF NOT EXISTS dispute_resolutions(
+    issue_id INTEGER PRIMARY KEY,
+    responsibility TEXT NOT NULL CHECK(responsibility IN ('undetermined','customer','restaurant','delivery','platform','external')),
+    resolution TEXT NOT NULL,
+    decided_by_user_id INTEGER NOT NULL,
+    decided_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(issue_id) REFERENCES order_issues(id) ON DELETE CASCADE,
+    FOREIGN KEY(decided_by_user_id) REFERENCES users(id)
+);
 CREATE TABLE IF NOT EXISTS customer_addresses(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     customer_id INTEGER NOT NULL,
@@ -419,5 +449,7 @@ db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(
 db.prepare("UPDATE delivery_profiles SET verification_status='verified',internal_number=COALESCE(internal_number,'CS-'||printf('%04d',delivery_user_id)) WHERE delivery_user_id IN (SELECT id FROM users WHERE role='delivery' AND account_status='approved') AND verification_status='pending'").run();
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-09-phase-2','Identidad del repartidor, PIN aleatorio, evidencia de entrega y límites simultáneos');
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-09-phase-3','Libro de efectivo, diferencias y conciliaciones de repartidores');
+db.exec("INSERT OR IGNORE INTO trust_profiles(user_id,score,level) SELECT id,50,CASE WHEN julianday('now')-julianday(created_at)<30 THEN 'new' ELSE 'standard' END FROM users");
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-09-phase-4','Confianza recuperable, riesgo explicable y resolución de disputas');
 
 module.exports = db;
