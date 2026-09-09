@@ -114,6 +114,9 @@ ensureColumn('orders','payment_expires_at','TEXT');
 ensureColumn('orders','accepted_prep_minutes','INTEGER');
 ensureColumn('orders','accepted_eta_at','TEXT');
 ensureColumn('orders','cancellation_reason','TEXT');
+ensureColumn('orders','delivery_pin_hash','TEXT');
+ensureColumn('orders','delivery_pin_cipher','TEXT');
+ensureColumn('orders','delivery_method',"TEXT NOT NULL DEFAULT 'contact'");
 
 db.exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_customer_request
@@ -153,6 +156,20 @@ CREATE TABLE IF NOT EXISTS order_substitutions(
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_substitutions_one_pending ON order_substitutions(original_order_item_id) WHERE status='pending';
 CREATE INDEX IF NOT EXISTS idx_substitutions_order ON order_substitutions(order_id,status,created_at);
+CREATE TABLE IF NOT EXISTS delivery_proofs(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL UNIQUE,
+    delivery_user_id INTEGER NOT NULL,
+    proof_type TEXT NOT NULL CHECK(proof_type IN ('contact','no_contact')),
+    photo_path TEXT,
+    latitude REAL,
+    longitude REAL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    delete_after TEXT NOT NULL,
+    FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY(delivery_user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_delivery_proofs_retention ON delivery_proofs(delete_after);
 CREATE TABLE IF NOT EXISTS audit_logs(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
@@ -273,6 +290,12 @@ ensureColumn('order_financials','reversed_at','TEXT');
 ensureColumn('order_financials','reversal_reason','TEXT');
 ensureColumn('order_financials','settlement_batch_id','INTEGER');
 ensureColumn('restaurant_members','can_use_pos','INTEGER NOT NULL DEFAULT 0');
+ensureColumn('delivery_profiles','internal_number','TEXT');
+ensureColumn('delivery_profiles','photo_url','TEXT');
+ensureColumn('delivery_profiles','vehicle_type','TEXT');
+ensureColumn('delivery_profiles','vehicle_description','TEXT');
+ensureColumn('delivery_profiles','verification_status',"TEXT NOT NULL DEFAULT 'pending'");
+ensureColumn('delivery_profiles','max_active_orders','INTEGER NOT NULL DEFAULT 1');
 db.exec(`
 CREATE TABLE IF NOT EXISTS pos_sales(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -364,5 +387,7 @@ db.exec(`INSERT OR IGNORE INTO order_financials(order_id,subtotal,delivery_fee,p
 SELECT id,COALESCE(subtotal,total-COALESCE(delivery_fee,0)),COALESCE(delivery_fee,0),0,0,0,total,payment_method,payment_status,COALESCE(subtotal,total-COALESCE(delivery_fee,0)),COALESCE(delivery_fee,0) FROM orders;`);
 db.exec(`UPDATE order_financials SET reversal_amount=total_charged,reversed_at=COALESCE(reversed_at,CURRENT_TIMESTAMP),reversal_reason=COALESCE(reversal_reason,'Migración de pedido cancelado'),restaurant_due=0,courier_due=0,platform_commission=0,payment_status='cancelled',settlement_status='reversed',updated_at=CURRENT_TIMESTAMP WHERE order_id IN (SELECT id FROM orders WHERE status='cancelled') AND settlement_status!='reversed';`);
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-09-phase-1','Privacidad de reparto, disponibilidad temporal, cancelación, sustituciones y preparación confirmada');
+db.prepare("UPDATE delivery_profiles SET verification_status='verified',internal_number=COALESCE(internal_number,'CS-'||printf('%04d',delivery_user_id)) WHERE delivery_user_id IN (SELECT id FROM users WHERE role='delivery' AND account_status='approved') AND verification_status='pending'").run();
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-09-phase-2','Identidad del repartidor, PIN aleatorio, evidencia de entrega y límites simultáneos');
 
 module.exports = db;

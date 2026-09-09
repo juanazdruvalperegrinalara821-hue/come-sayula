@@ -192,6 +192,7 @@ select{
 <div class="container">
 
     <div id="error"></div>
+    <section class="seccion"><h2>Mi perfil de entrega</h2><p id="estadoPerfil">Cargando perfil…</p><form onsubmit="guardarPerfil(event)" style="display:grid;gap:9px"><select id="tipoVehiculo" required><option value="motorcycle">Motocicleta</option><option value="bicycle">Bicicleta</option><option value="car">Automóvil</option><option value="walking">A pie</option></select><input id="descripcionVehiculo" maxlength="120" placeholder="Ejemplo: motocicleta roja" required><button class="aceptar">Guardar vehículo</button></form></section>
     <section class="seccion"><h2>Mi disponibilidad</h2><div style="display:flex;gap:10px;flex-wrap:wrap"><button class="aceptar" onclick="cambiarDisponibilidadRepartidor('available')">🟢 Disponible</button><button class="aceptar" style="background:#555" onclick="cambiarDisponibilidadRepartidor('offline')">⚫ Desconectado</button></div><p id="estadoDisponibilidad">Consultando estado…</p></section>
 
     <section class="seccion">
@@ -627,7 +628,7 @@ async function cargarMisPedidos(){
 
     : p.status === 'assigned'
       ? `<button class="aceptar" onclick="cambiarEstado(${p.id},'delivering')">📦 Confirmar que recogí el pedido</button>`
-      : `<button class="aceptar" style="background:#16a34a" onclick="cambiarEstado(${p.id},'delivered')">✅ Confirmar entrega con PIN</button>`
+      : `<button class="aceptar" style="background:#16a34a" onclick="cambiarEstado(${p.id},'delivered','${p.delivery_method||'contact'}')">✅ ${p.delivery_method==='no_contact'?'Confirmar con fotografía':'Confirmar entrega con PIN'}</button>`
 }   
         </div>
 
@@ -645,6 +646,8 @@ async function cargarMisPedidos(){
 
 async function cambiarDisponibilidadRepartidor(status){try{const r=await fetch('/api/delivery/availability',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token()},body:JSON.stringify({status})}),d=await r.json();if(!r.ok)throw new Error(d.error||'No fue posible cambiar el estado');estadoDisponibilidad.textContent=status==='available'?'🟢 Estás disponible para recibir pedidos':'⚫ Estás desconectado';cargar()}catch(e){alert('❌ '+e.message)}}
 async function cargarDisponibilidadRepartidor(){try{const r=await fetch('/api/delivery/availability',{headers:{Authorization:'Bearer '+token()}}),d=await r.json();estadoDisponibilidad.textContent=d.status==='available'?'🟢 Estás disponible para recibir pedidos':d.status==='busy'?'🟠 Estás ocupado con una entrega':'⚫ Estás desconectado'}catch(e){}}
+async function cargarPerfil(){try{const r=await fetch('/api/delivery/profile',{headers:{Authorization:'Bearer '+token()}}),d=await r.json();if(!r.ok)throw new Error(d.error);tipoVehiculo.value=d.vehicle_type||'motorcycle';descripcionVehiculo.value=d.vehicle_description||'';estadoPerfil.textContent=(d.verification_status==='verified'?'✅ Perfil verificado':'⏳ Perfil '+(d.verification_status||'pendiente'))+' · '+(d.internal_number||'Sin número')+' · máximo '+Number(d.max_active_orders||1)+' entrega(s) activa(s)'}catch(e){estadoPerfil.textContent='❌ '+e.message}}
+async function guardarPerfil(event){event.preventDefault();try{const r=await fetch('/api/delivery/profile',{method:'PUT',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token()},body:JSON.stringify({vehicleType:tipoVehiculo.value,vehicleDescription:descripcionVehiculo.value})}),d=await r.json();if(!r.ok)throw new Error(d.error);await cargarPerfil();alert('✅ Perfil actualizado')}catch(e){alert('❌ '+e.message)}}
 async function rechazarPedido(id){try{await fetch('/api/delivery/orders/'+id+'/reject',{method:'POST',headers:{Authorization:'Bearer '+token()}});cargar()}catch(e){}}
 
 function compartirUbicacion(orderId){
@@ -769,12 +772,17 @@ function textoManiobra(tipo){return tipo==='depart'?'Inicia por':tipo==='arrive'
 
 async function cambiarEstado(
     id,
-    estado
+    estado,
+    deliveryMethod='contact'
 ){
 
     try{
         let deliveryPin='';
-        if(estado==='delivered'){
+        let proofDataUrl='';
+        if(estado==='delivered'&&deliveryMethod==='no_contact'){
+            const input=document.createElement('input');input.type='file';input.accept='image/png,image/jpeg,image/webp';input.capture='environment';
+            proofDataUrl=await new Promise((resolve,reject)=>{input.onchange=()=>{const file=input.files[0];if(!file)return reject(new Error('Selecciona una fotografía de la entrega.'));if(file.size>4*1024*1024)return reject(new Error('La fotografía pesa más de 4 MB.'));const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('No fue posible leer la fotografía.'));reader.readAsDataURL(file)};input.click()});
+        }else if(estado==='delivered'){
             deliveryPin=String(prompt('Pide al cliente su código de entrega de 4 dígitos:')||'').trim();
             if(!/^\d{4}$/.test(deliveryPin))throw new Error('Escribe los 4 dígitos del código de entrega.');
         }
@@ -795,7 +803,7 @@ async function cambiarEstado(
                     },
 
                     body:JSON.stringify({
-                        status:estado,deliveryPin
+                        status:estado,deliveryPin,proofDataUrl
                     })
                 }
             );
@@ -875,6 +883,7 @@ if(comprobarAcceso()){
 
     iniciarUbicacionPermanente();
     cargarDisponibilidadRepartidor();
+    cargarPerfil();
     cargar();
 
     setInterval(
