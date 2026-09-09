@@ -377,25 +377,7 @@ async function cargarDisponibles(){
 
                 <br>
 
-                🏠 Entrega:
-                ${escapar(
-                    p.address
-                )}
-
-                <br>
-
-                👤 Cliente:
-                ${escapar(
-                    p.customer_name
-                )}
-
-                <br>
-
-                📞 Teléfono:
-                ${escapar(
-                    p.customer_phone ||
-                    'Sin teléfono'
-                )}
+                🔒 La dirección exacta y los datos del cliente se mostrarán únicamente si aceptas el pedido.
 
                 ${p.distance_to_restaurant_km==null?'':'<br>📏 A '+Number(p.distance_to_restaurant_km).toFixed(1)+' km del restaurante'}
 

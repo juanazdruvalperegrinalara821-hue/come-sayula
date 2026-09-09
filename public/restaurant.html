@@ -509,10 +509,10 @@ function mostrarProductos(productos){
             <small>${escapar(producto.category||'Comida')}</small>
             <small>${producto.stock_enabled?(producto.stock_quantity<=producto.low_stock_threshold?'⚠️ ':'📦 ')+producto.stock_quantity+' disponibles':'📦 Sin control de existencias'}</small>
             <small>${JSON.parse(producto.variants_json||'[]').length} variantes · ${JSON.parse(producto.addons_json||'[]').length} complementos</small>
-            <small>${producto.available?'🟢 Disponible':'⚪ No disponible'}</small>
+            <small>${producto.available?'🟢 Disponible':producto.availability_status==='temporary'?`⏳ Agotado temporalmente${producto.unavailable_until?' hasta '+new Date(producto.unavailable_until).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}):''}`:'⚪ Agotado hasta activarlo'}</small>
             <div class="producto-acciones">
                 <button class="editar" onclick="editarProducto(${producto.id})">✏️ Editar</button>
-                <button class="disponibilidad" onclick="cambiarDisponibilidad(${producto.id},${producto.available?0:1})">${producto.available?'Ocultar':'Activar'}</button>
+                ${producto.available?`<button class="disponibilidad" onclick="agotarTemporalmente(${producto.id})">⏳ Agotar temporal</button><button class="disponibilidad" onclick="cambiarDisponibilidad(${producto.id},false)">Agotar manual</button>`:`<button class="disponibilidad" onclick="cambiarDisponibilidad(${producto.id},true)">Activar ahora</button>`}
             </div>
         </article>`).join('');
 }
@@ -603,7 +603,13 @@ function ubicarRestauranteConGps(){
 }
 
 async function cambiarDisponibilidad(id,available){
-    try{await solicitudProducto('/api/restaurant/products/'+id,'PATCH',{available});await cargarPanel();}
+    try{await solicitudProducto('/api/restaurant/products/'+id,'PATCH',{status:available?'available':'manual'});await cargarPanel();}
+    catch(error){alert('❌ '+error.message);}
+}
+async function agotarTemporalmente(id){
+    const opcion=prompt('¿Cuánto tiempo estará agotado? Escribe 30, 60, 120 o DIA.','30');if(!opcion)return;
+    const duration=opcion.trim().toLowerCase()==='dia'?'day':opcion.trim();
+    try{await solicitudProducto('/api/restaurant/products/'+id,'PATCH',{status:'temporary',duration});await cargarPanel();}
     catch(error){alert('❌ '+error.message);}
 }
 
@@ -769,6 +775,7 @@ function mostrarPedidos(pedidos){
                                     Number(item.quantity)
                                 ).toFixed(2)}
                             </strong>
+                            ${['received','accepted','preparing'].includes(estado)?`<button style="margin-left:8px;padding:6px 9px" onclick="proponerSustitucion(${pedido.id},${item.id})">Proponer sustituto</button>`:''}
 
                         </div>
 
@@ -812,9 +819,29 @@ function detectarPedidosNuevos(pedidos){
     pedidosConocidos=actuales;
 }
 
+async function proponerSustitucion(orderId,itemId){
+    const products=(datosRestaurante?.products||[]).filter(product=>product.available);
+    if(!products.length){alert('No hay productos disponibles para proponer.');return;}
+    const menu=products.map((product,index)=>`${index+1}. ${product.name} · $${Number(product.price).toFixed(2)}`).join('\n');
+    const selected=prompt('Elige el número del producto sustituto:\n'+menu);
+    if(selected===null)return;
+    const replacement=products[Number(selected)-1];
+    if(!replacement){alert('Selecciona un número válido.');return;}
+    const description=prompt('Mensaje opcional para el cliente sobre la sustitución:','Producto agotado; proponemos esta alternativa.')||'';
+    try{await solicitudProducto('/api/restaurant/orders/'+orderId+'/substitutions','POST',{originalItemId:itemId,replacementProductId:replacement.id,description});alert('✅ Propuesta enviada al cliente. El total no cambiará hasta que la acepte.');}
+    catch(error){alert('❌ '+error.message);}
+}
+
 async function cambiarEstado(id, estado){
 
     const token = obtenerToken();
+    let prepMinutes=null;
+    if(estado==='accepted'){
+        const value=prompt('¿Cuántos minutos necesitas para preparar este pedido?','30');
+        if(value===null)return;
+        prepMinutes=Number(value);
+        if(!Number.isInteger(prepMinutes)||prepMinutes<5||prepMinutes>180){alert('Escribe un tiempo entre 5 y 180 minutos.');return;}
+    }
 
     try{
 
@@ -829,7 +856,8 @@ async function cambiarEstado(id, estado){
                 },
 
                 body:JSON.stringify({
-                    status:estado
+                    status:estado,
+                    prepMinutes
                 })
             }
         );

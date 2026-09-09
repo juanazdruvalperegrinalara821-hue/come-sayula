@@ -91,6 +91,8 @@ ensureColumn('products','stock_quantity','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('products','low_stock_threshold','INTEGER NOT NULL DEFAULT 5');
 ensureColumn('products','variants_json',"TEXT NOT NULL DEFAULT '[]'");
 ensureColumn('products','addons_json',"TEXT NOT NULL DEFAULT '[]'");
+ensureColumn('products','availability_status',"TEXT NOT NULL DEFAULT 'available'");
+ensureColumn('products','unavailable_until','TEXT');
 ensureColumn('order_items','options_description','TEXT');
 ensureColumn('directory_entries','priority','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('directory_entries','featured','INTEGER NOT NULL DEFAULT 0');
@@ -109,11 +111,9 @@ ensureColumn('orders','provider_preference_id','TEXT');
 ensureColumn('orders','provider_checkout_url','TEXT');
 ensureColumn('orders','provider_payment_id','TEXT');
 ensureColumn('orders','payment_expires_at','TEXT');
-ensureColumn('orders','payment_provider','TEXT');
-ensureColumn('orders','provider_preference_id','TEXT');
-ensureColumn('orders','provider_checkout_url','TEXT');
-ensureColumn('orders','provider_payment_id','TEXT');
-ensureColumn('orders','payment_expires_at','TEXT');
+ensureColumn('orders','accepted_prep_minutes','INTEGER');
+ensureColumn('orders','accepted_eta_at','TEXT');
+ensureColumn('orders','cancellation_reason','TEXT');
 
 db.exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_customer_request
@@ -124,9 +124,35 @@ CREATE INDEX IF NOT EXISTS idx_orders_restaurant ON orders(restaurant_id,status)
 CREATE INDEX IF NOT EXISTS idx_orders_scheduled_for ON orders(scheduled_for,status) WHERE scheduled_for IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_provider_preference ON orders(provider_preference_id) WHERE provider_preference_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_provider_payment ON orders(provider_payment_id) WHERE provider_payment_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_provider_preference ON orders(provider_preference_id) WHERE provider_preference_id IS NOT NULL;
-CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_provider_payment ON orders(provider_payment_id) WHERE provider_payment_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_delivery_user ON delivery_assignments(delivery_user_id,status);
+CREATE INDEX IF NOT EXISTS idx_products_availability ON products(restaurant_id,availability_status,unavailable_until);
+CREATE TABLE IF NOT EXISTS schema_migrations(
+    version TEXT PRIMARY KEY,
+    description TEXT NOT NULL,
+    applied_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS order_substitutions(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL,
+    original_order_item_id INTEGER NOT NULL,
+    replacement_product_id INTEGER NOT NULL,
+    proposed_by_user_id INTEGER,
+    original_name TEXT NOT NULL,
+    replacement_name TEXT NOT NULL,
+    original_unit_price REAL NOT NULL,
+    replacement_unit_price REAL NOT NULL,
+    price_difference REAL NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','rejected','cancelled')),
+    responded_at TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY(original_order_item_id) REFERENCES order_items(id),
+    FOREIGN KEY(replacement_product_id) REFERENCES products(id),
+    FOREIGN KEY(proposed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_substitutions_one_pending ON order_substitutions(original_order_item_id) WHERE status='pending';
+CREATE INDEX IF NOT EXISTS idx_substitutions_order ON order_substitutions(order_id,status,created_at);
 CREATE TABLE IF NOT EXISTS audit_logs(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
@@ -337,5 +363,6 @@ if(!db.prepare('SELECT id FROM delivery_zones LIMIT 1').get()){
 db.exec(`INSERT OR IGNORE INTO order_financials(order_id,subtotal,delivery_fee,platform_commission,tip,discount,total_charged,payment_method,payment_status,restaurant_due,courier_due)
 SELECT id,COALESCE(subtotal,total-COALESCE(delivery_fee,0)),COALESCE(delivery_fee,0),0,0,0,total,payment_method,payment_status,COALESCE(subtotal,total-COALESCE(delivery_fee,0)),COALESCE(delivery_fee,0) FROM orders;`);
 db.exec(`UPDATE order_financials SET reversal_amount=total_charged,reversed_at=COALESCE(reversed_at,CURRENT_TIMESTAMP),reversal_reason=COALESCE(reversal_reason,'Migración de pedido cancelado'),restaurant_due=0,courier_due=0,platform_commission=0,payment_status='cancelled',settlement_status='reversed',updated_at=CURRENT_TIMESTAMP WHERE order_id IN (SELECT id FROM orders WHERE status='cancelled') AND settlement_status!='reversed';`);
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-09-phase-1','Privacidad de reparto, disponibilidad temporal, cancelación, sustituciones y preparación confirmada');
 
 module.exports = db;
