@@ -360,6 +360,35 @@ CREATE TABLE IF NOT EXISTS cash_movements(
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_cash_movements_session ON cash_movements(cash_session_id,created_at);
+CREATE TABLE IF NOT EXISTS courier_cash_records(
+    order_id INTEGER PRIMARY KEY,
+    delivery_user_id INTEGER NOT NULL,
+    cash_collected REAL NOT NULL DEFAULT 0 CHECK(cash_collected>=0),
+    courier_earnings REAL NOT NULL DEFAULT 0 CHECK(courier_earnings>=0),
+    amount_to_remit REAL NOT NULL DEFAULT 0 CHECK(amount_to_remit>=0),
+    settlement_id INTEGER,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE,
+    FOREIGN KEY(delivery_user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_courier_cash_pending ON courier_cash_records(delivery_user_id,settlement_id,created_at);
+CREATE TABLE IF NOT EXISTS courier_cash_settlements(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    delivery_user_id INTEGER NOT NULL,
+    expected_amount REAL NOT NULL,
+    reported_amount REAL NOT NULL,
+    difference_amount REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'review' CHECK(status IN ('review','settled')),
+    courier_note TEXT,
+    admin_note TEXT,
+    reference TEXT,
+    reported_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    settled_at TEXT,
+    settled_by_user_id INTEGER,
+    FOREIGN KEY(delivery_user_id) REFERENCES users(id),
+    FOREIGN KEY(settled_by_user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_courier_cash_settlements_status ON courier_cash_settlements(status,reported_at);
 CREATE TABLE IF NOT EXISTS customer_addresses(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     customer_id INTEGER NOT NULL,
@@ -389,5 +418,6 @@ db.exec(`UPDATE order_financials SET reversal_amount=total_charged,reversed_at=C
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-09-phase-1','Privacidad de reparto, disponibilidad temporal, cancelación, sustituciones y preparación confirmada');
 db.prepare("UPDATE delivery_profiles SET verification_status='verified',internal_number=COALESCE(internal_number,'CS-'||printf('%04d',delivery_user_id)) WHERE delivery_user_id IN (SELECT id FROM users WHERE role='delivery' AND account_status='approved') AND verification_status='pending'").run();
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-09-phase-2','Identidad del repartidor, PIN aleatorio, evidencia de entrega y límites simultáneos');
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-09-phase-3','Libro de efectivo, diferencias y conciliaciones de repartidores');
 
 module.exports = db;
