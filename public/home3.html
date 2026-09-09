@@ -602,6 +602,7 @@ async function cargarRestaurantes(){
             return;
         }
 
+        let favoritos=new Set();try{const token=sessionStorage.getItem('cs_token'),user=JSON.parse(sessionStorage.getItem('cs_user')||'null');if(token&&user?.role==='customer'){const fr=await fetch('/api/favorites',{headers:{Authorization:'Bearer '+token}});if(fr.ok)favoritos=new Set((await fr.json()).map(x=>String(x.id)))}}catch{}
         restaurantes.forEach(restaurante => {
 
             const tarjeta = document.createElement('div');
@@ -656,6 +657,7 @@ async function cargarRestaurantes(){
                             ? 'Ver información'
                             : 'Ver menú'}
                     </button>
+                    ${restaurante.listingType==='registered'&&sessionStorage.getItem('cs_token')?`<button class="restaurant-button" style="margin-top:7px;background:${favoritos.has(String(restaurante.id))?'#fff1e7':'#f1f1f1'};color:#8a3b06" onclick="event.stopPropagation();alternarFavorito('${escaparJS(String(restaurante.id))}',this)">${favoritos.has(String(restaurante.id))?'❤️ Favorito':'🤍 Agregar a favoritos'}</button>`:''}
 
                 </div>
             `;
@@ -706,6 +708,9 @@ function escapar(texto){
     return div.innerHTML;
 
 }
+
+async function alternarFavorito(id,button){const active=button.textContent.includes('❤️'),response=await fetch('/api/favorites/'+encodeURIComponent(id),{method:active?'DELETE':'PUT',headers:{Authorization:'Bearer '+sessionStorage.getItem('cs_token')}});if(response.status===401)return location.href='/auth.html';const data=await response.json();if(!response.ok)return alert(data.error||'No fue posible actualizar favoritos');button.textContent=data.favorite?'❤️ Favorito':'🤍 Agregar a favoritos';button.style.background=data.favorite?'#fff1e7':'#f1f1f1'}
+async function cargarPromocionesLocales(){try{const response=await fetch('/api/promotions'),items=await response.json();if(!response.ok||!items.length)return;const section=document.createElement('section');section.className='section';section.innerHTML='<h2>🔥 Ofertas de Sayula</h2><div class="restaurants">'+items.map(p=>`<article class="restaurant" style="padding:18px"><div class="restaurant-info"><span class="restaurant-tag featured">Oferta local</span><h3>${escapar(p.title)}</h3><p>${escapar(p.description)}</p><small>${escapar(p.restaurant_name)}${p.expires_at?' · hasta '+new Date(p.expires_at).toLocaleDateString('es-MX'):''}</small><button class="restaurant-button" onclick="abrirRestaurante('${escaparJS(String(p.restaurant_id))}','${escaparJS(p.restaurant_name)}')">Ver menú</button></div></article>`).join('')+'</div>';document.getElementById('restaurantes')?.before(section)}catch{}}
 
 function escaparJS(texto){
 
@@ -1734,6 +1739,7 @@ function continuarPedido(){
             <label style="display:block;font-weight:bold;margin:12px 0 6px">🤝 Forma de entrega</label><select id="formaEntregaPedido" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:11px;background:white"><option value="contact">Recibir personalmente con PIN</option><option value="no_contact">Dejar en la puerta con fotografía</option></select><small style="display:block;color:#666;margin-top:6px">La foto será privada y se eliminará después de 30 días.</small>
             <label style="display:block;font-weight:bold;margin:12px 0 6px">🕐 ¿Cuándo quieres recibirlo?</label><select id="momentoPedido" onchange="actualizarMomentoPedido()" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:11px;background:white"><option value="immediate">Lo antes posible</option><option value="scheduled">Programar para después</option></select><div id="campoFechaPedido" style="display:none;margin-top:9px"><input id="fechaPedido" type="datetime-local" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:11px"><small style="display:block;color:#666;margin-top:6px">Hora de Sayula, Jalisco. Mínimo 45 minutos y máximo 7 días.</small></div>
             <label style="display:block;font-weight:bold;margin:12px 0 6px">💳 Forma de pago</label><select id="pagoPedido" onchange="actualizarAvisoPago()" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:11px;background:white"><option value="Efectivo">Efectivo al recibir</option><option value="Transferencia">Transferencia (requiere confirmación)</option><option value="Tarjeta al recibir">Tarjeta al recibir</option><option id="opcionMercadoPago" value="Mercado Pago" hidden disabled>Mercado Pago</option></select><div id="avisoPago" style="background:#fff7db;color:#725000;padding:10px;border-radius:10px;margin-top:8px;font-size:13px">El pago se realizará cuando recibas el pedido.</div>
+            <label style="display:block;font-weight:bold;margin:12px 0 6px">🎟️ Cupón</label><div style="display:flex;gap:8px"><input id="cuponPedido" maxlength="30" placeholder="Código opcional" style="flex:1;padding:12px;border:1px solid #ddd;border-radius:11px;text-transform:uppercase"><button type="button" onclick="actualizarBeneficios()" style="border:0;border-radius:11px;padding:0 15px">Aplicar</button></div><label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input id="usarCreditosPedido" type="checkbox" onchange="actualizarBeneficios()" style="width:auto"> Usar mi crédito COME SAYULA</label><div id="resumenBeneficios" style="color:#176b37;margin-top:8px;font-size:13px"></div>
             ${contieneAlcohol?'<label style="display:block;background:#fff1e6;color:#8a3412;padding:12px;border-radius:11px;margin-top:12px"><input id="confirmarEdadPedido" type="checkbox"> Confirmo que la persona que recibirá el pedido es mayor de 18 años y mostrará identificación.</label>':''}
             <div id="errorPedido" style="color:#b42318;margin-top:10px"></div><button id="botonConfirmarPedido" type="submit" style="width:100%;border:0;background:linear-gradient(135deg,#f47b20,#e85d04);color:white;padding:15px;border-radius:12px;font-weight:bold;font-size:16px;margin-top:16px;cursor:pointer">Selecciona ubicación para calcular</button>
         </form></div>`;
@@ -1798,9 +1804,11 @@ async function cotizarEnvio(){
         document.getElementById('costoEnvio').textContent='$'+Number(datos.deliveryFee).toFixed(2);
         document.getElementById('distanciaEnvio').textContent=datos.distanceKm===null?'(tarifa base)':'('+Number(datos.distanceKm).toFixed(1)+' km)';
         document.getElementById('totalPedido').textContent='$'+(subtotal+Number(datos.deliveryFee)).toFixed(2);
-        document.getElementById('botonConfirmarPedido').textContent='Realizar pedido · $'+(subtotal+Number(datos.deliveryFee)).toFixed(2);
+        document.getElementById('botonConfirmarPedido').textContent='Realizar pedido · $'+(subtotal+Number(datos.deliveryFee)).toFixed(2);actualizarBeneficios();
     }catch(error){cotizacionEnvio=null;document.getElementById('errorPedido').textContent='❌ '+error.message;}
 }
+
+async function actualizarBeneficios(){const productos=JSON.parse(localStorage.getItem('come_sayula_carrito')||'[]'),coupon=document.getElementById('cuponPedido'),credits=document.getElementById('usarCreditosPedido'),summary=document.getElementById('resumenBeneficios');if(!productos.length||!cotizacionEnvio||!coupon||!credits)return;const subtotal=productos.reduce((s,item)=>s+Number(item.price)*Number(item.quantity),0);try{const response=await fetch('/api/growth/quote',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+sessionStorage.getItem('cs_token')},body:JSON.stringify({restaurantId:productos[0].restaurantId,subtotal,deliveryFee:cotizacionEnvio.deliveryFee,couponCode:coupon.value.trim(),useCredits:credits.checked})}),data=await response.json();if(!response.ok)throw new Error(data.error);summary.textContent=(data.couponDiscount?'Cupón −$'+Number(data.couponDiscount).toFixed(2)+' · ':'')+(data.creditUsed?'Crédito −$'+Number(data.creditUsed).toFixed(2):'');document.getElementById('totalPedido').textContent='$'+Number(data.total).toFixed(2);document.getElementById('botonConfirmarPedido').textContent='Realizar pedido · $'+Number(data.total).toFixed(2)}catch(error){summary.textContent='❌ '+error.message}}
 
 function cerrarCheckout(){
     if(mapaEntregaCliente){mapaEntregaCliente.remove();mapaEntregaCliente=null;marcadorEntregaCliente=null;}
@@ -1823,14 +1831,14 @@ async function confirmarPedido(evento){
     const orderTiming=momentoPedido.value,scheduledFor=orderTiming==='scheduled'?fechaSayulaAISO(fechaPedido.value):null;
     if(orderTiming==='scheduled'&&!scheduledFor){document.getElementById('errorPedido').textContent='🕐 Selecciona una fecha y hora válidas.';boton.disabled=false;return;}
     try{
-        const respuesta=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sessionStorage.getItem('cs_token')},body:JSON.stringify({restaurantId:productos[0].restaurantId,address,paymentMethod:pagoPedido.value,orderTiming,scheduledFor,deliveryMethod:formaEntregaPedido.value,deliveryLatitude:coordenadasEntrega.latitude,deliveryLongitude:coordenadasEntrega.longitude,clientRequestId:solicitudPedidoId,ageConfirmed:contieneAlcohol&&document.getElementById('confirmarEdadPedido')?.checked,items:productos.map(item=>({productId:item.id,quantity:item.quantity,variant:item.variant||'',addons:item.addons||[]}))})});
+        const respuesta=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sessionStorage.getItem('cs_token')},body:JSON.stringify({restaurantId:productos[0].restaurantId,address,paymentMethod:pagoPedido.value,orderTiming,scheduledFor,deliveryMethod:formaEntregaPedido.value,couponCode:cuponPedido.value.trim(),useCredits:usarCreditosPedido.checked,deliveryLatitude:coordenadasEntrega.latitude,deliveryLongitude:coordenadasEntrega.longitude,clientRequestId:solicitudPedidoId,ageConfirmed:contieneAlcohol&&document.getElementById('confirmarEdadPedido')?.checked,items:productos.map(item=>({productId:item.id,quantity:item.quantity,variant:item.variant||'',addons:item.addons||[]}))})});
         const datos=await respuesta.json();if(!respuesta.ok)throw new Error(datos.error||'No se pudo guardar el pedido.');
         if(datos.paymentStatus==='awaiting_online_payment'&&datos.checkoutUrl){localStorage.removeItem('come_sayula_carrito');actualizarContadorCarrito();location.href=datos.checkoutUrl;return;}
         if(saveAddress){try{await fetch('/api/customer/addresses',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+sessionStorage.getItem('cs_token')},body:JSON.stringify({label:'Casa',address:addressText,reference:referenceText,latitude:coordenadasEntrega.latitude,longitude:coordenadasEntrega.longitude,isDefault:direccionesCliente.length===0})})}catch(e){}}
         localStorage.removeItem('come_sayula_carrito');actualizarContadorCarrito();
         const avisoPago=datos.paymentStatus==='awaiting_confirmation'?'<div style="background:#fff3cd;color:#715200;padding:12px;border-radius:11px;margin-bottom:15px"><strong>⏳ Transferencia: pago por confirmar</strong><br><small>El restaurante debe comprobar el depósito.</small></div>':'';
         const avisoMomento=datos.orderTiming==='scheduled'?`<div style="background:#eaf3ff;color:#174f86;padding:12px;border-radius:11px;margin-bottom:15px"><strong>🗓️ PEDIDO PROGRAMADO</strong><br><small>${new Date(datos.scheduledFor).toLocaleString('es-MX',{timeZone:ZONA_SAYULA,dateStyle:'full',timeStyle:'short'})} · hora de Sayula</small></div>`:'<div style="background:#eef8f0;color:#236438;padding:12px;border-radius:11px;margin-bottom:15px"><strong>⚡ Pedido inmediato</strong></div>';
-        document.getElementById('ventanaCheckout').innerHTML=`<div style="width:min(480px,100%);background:white;border-radius:22px;padding:35px;text-align:center"><div style="font-size:65px">✅</div><h2>Pedido #${datos.orderId} confirmado</h2>${avisoMomento}${avisoPago}<p style="color:#666;margin:12px 0 22px">Productos: $${Number(datos.subtotal).toFixed(2)}<br>Envío: $${Number(datos.deliveryFee).toFixed(2)}<br><strong>Total: $${Number(datos.total).toFixed(2)}</strong></p><button onclick="location.href='/tracking.html?order=${datos.orderId}'" style="width:100%;border:0;background:#e85d04;color:white;padding:14px;border-radius:12px;font-weight:bold;cursor:pointer">Ver seguimiento</button><button onclick="location.reload()" style="width:100%;border:0;background:#eee;padding:13px;border-radius:12px;font-weight:bold;margin-top:9px;cursor:pointer">Volver al inicio</button></div>`;
+        document.getElementById('ventanaCheckout').innerHTML=`<div style="width:min(480px,100%);background:white;border-radius:22px;padding:35px;text-align:center"><div style="font-size:65px">✅</div><h2>Pedido #${datos.orderId} confirmado</h2>${avisoMomento}${avisoPago}<p style="color:#666;margin:12px 0 22px">Productos: $${Number(datos.subtotal).toFixed(2)}<br>Envío: $${Number(datos.deliveryFee).toFixed(2)}${Number(datos.discount)?'<br>Cupón: −$'+Number(datos.discount).toFixed(2):''}${Number(datos.creditUsed)?'<br>Crédito: −$'+Number(datos.creditUsed).toFixed(2):''}<br><strong>Total: $${Number(datos.total).toFixed(2)}</strong></p><button onclick="location.href='/tracking.html?order=${datos.orderId}'" style="width:100%;border:0;background:#e85d04;color:white;padding:14px;border-radius:12px;font-weight:bold;cursor:pointer">Ver seguimiento</button><button onclick="location.reload()" style="width:100%;border:0;background:#eee;padding:13px;border-radius:12px;font-weight:bold;margin-top:9px;cursor:pointer">Volver al inicio</button></div>`;
     }catch(error){document.getElementById('errorPedido').textContent='❌ '+error.message;boton.disabled=false;boton.textContent='Intentar nuevamente';}
 }
 async function cerrarSesion(){
@@ -1954,7 +1962,7 @@ function inicio(){
 /* CARGAR RESTAURANTES AL ABRIR */
 
 window.addEventListener('DOMContentLoaded', function(){
-    cargarRestaurantes();
+    cargarRestaurantes();cargarPromocionesLocales();
     fetch('/api/public-config').then(response=>response.json()).then(config=>{const option=document.getElementById('opcionMercadoPago');if(option&&config.onlinePaymentEnabled){option.hidden=false;option.disabled=false;option.textContent=config.onlinePaymentMode==='test'?'Mercado Pago · modo de prueba':'Mercado Pago';}}).catch(()=>{});
 });
 

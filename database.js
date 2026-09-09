@@ -433,7 +433,19 @@ CREATE TABLE IF NOT EXISTS customer_addresses(
     FOREIGN KEY(customer_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_customer_addresses_user ON customer_addresses(customer_id,is_default DESC,id DESC);
+CREATE TABLE IF NOT EXISTS coupons(id INTEGER PRIMARY KEY AUTOINCREMENT,code TEXT NOT NULL UNIQUE COLLATE NOCASE,description TEXT,discount_type TEXT NOT NULL CHECK(discount_type IN ('percent','fixed','free_delivery')),discount_value REAL NOT NULL CHECK(discount_value>=0),minimum_order REAL NOT NULL DEFAULT 0,maximum_discount REAL,restaurant_id INTEGER,starts_at TEXT,expires_at TEXT,total_limit INTEGER,per_user_limit INTEGER NOT NULL DEFAULT 1,active INTEGER NOT NULL DEFAULT 1,created_by_user_id INTEGER,created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE,FOREIGN KEY(created_by_user_id) REFERENCES users(id) ON DELETE SET NULL);
+CREATE TABLE IF NOT EXISTS coupon_redemptions(id INTEGER PRIMARY KEY AUTOINCREMENT,coupon_id INTEGER NOT NULL,customer_id INTEGER NOT NULL,order_id INTEGER NOT NULL UNIQUE,amount REAL NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(coupon_id) REFERENCES coupons(id),FOREIGN KEY(customer_id) REFERENCES users(id),FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE);
+CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_limits ON coupon_redemptions(coupon_id,customer_id);
+CREATE TABLE IF NOT EXISTS customer_credits(id INTEGER PRIMARY KEY AUTOINCREMENT,customer_id INTEGER NOT NULL,amount REAL NOT NULL CHECK(amount>0),remaining_amount REAL NOT NULL CHECK(remaining_amount>=0),source_type TEXT NOT NULL CHECK(source_type IN ('compensation','loyalty','referral','promotion')),source_reference TEXT NOT NULL,reason TEXT NOT NULL,expires_at TEXT,created_by_user_id INTEGER,created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(customer_id,source_type,source_reference),FOREIGN KEY(customer_id) REFERENCES users(id) ON DELETE CASCADE,FOREIGN KEY(created_by_user_id) REFERENCES users(id) ON DELETE SET NULL);
+CREATE TABLE IF NOT EXISTS credit_uses(id INTEGER PRIMARY KEY AUTOINCREMENT,credit_id INTEGER NOT NULL,order_id INTEGER NOT NULL,amount REAL NOT NULL CHECK(amount>0),created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(credit_id,order_id),FOREIGN KEY(credit_id) REFERENCES customer_credits(id),FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS loyalty_accounts(customer_id INTEGER PRIMARY KEY,points INTEGER NOT NULL DEFAULT 0 CHECK(points>=0),lifetime_points INTEGER NOT NULL DEFAULT 0 CHECK(lifetime_points>=0),updated_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(customer_id) REFERENCES users(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS referrals(id INTEGER PRIMARY KEY AUTOINCREMENT,referrer_user_id INTEGER NOT NULL,referred_user_id INTEGER NOT NULL UNIQUE,referral_code TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','rewarded','cancelled')),qualifying_order_id INTEGER,rewarded_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,CHECK(referrer_user_id<>referred_user_id),FOREIGN KEY(referrer_user_id) REFERENCES users(id),FOREIGN KEY(referred_user_id) REFERENCES users(id),FOREIGN KEY(qualifying_order_id) REFERENCES orders(id));
+CREATE TABLE IF NOT EXISTS favorite_restaurants(customer_id INTEGER NOT NULL,restaurant_id INTEGER NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(customer_id,restaurant_id),FOREIGN KEY(customer_id) REFERENCES users(id) ON DELETE CASCADE,FOREIGN KEY(restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS local_promotions(id INTEGER PRIMARY KEY AUTOINCREMENT,restaurant_id INTEGER NOT NULL,title TEXT NOT NULL,description TEXT NOT NULL,starts_at TEXT,expires_at TEXT,active INTEGER NOT NULL DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE);
+CREATE INDEX IF NOT EXISTS idx_local_promotions_public ON local_promotions(active,starts_at,expires_at);
 `);
+ensureColumn('orders','coupon_id','INTEGER');
+ensureColumn('orders','credit_used','REAL NOT NULL DEFAULT 0');
 ensureColumn('pos_sale_items','options_description','TEXT');
 ensureColumn('pos_sales','cash_session_id','INTEGER');
 db.prepare('UPDATE restaurant_subscriptions SET registration_fee=50,first_month_fee=100,initial_payment_total=150 WHERE registration_fee=150').run();
@@ -451,5 +463,6 @@ db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-09-phase-3','Libro de efectivo, diferencias y conciliaciones de repartidores');
 db.exec("INSERT OR IGNORE INTO trust_profiles(user_id,score,level) SELECT id,50,CASE WHEN julianday('now')-julianday(created_at)<30 THEN 'new' ELSE 'standard' END FROM users");
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-09-phase-4','Confianza recuperable, riesgo explicable y resolución de disputas');
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-09-phase-5','Cupones, créditos, fidelidad, referidos, promociones locales y favoritos');
 
 module.exports = db;

@@ -299,6 +299,7 @@ header button{
     <section class="gestion-productos" id="seccionFinanzas" style="margin-bottom:20px"><div class="cabecera-seccion"><div><h2>💰 Ventas y cortes</h2><p id="porcentajeComision" style="color:#777;margin-top:5px"></p></div></div><div id="cortesRestaurante" style="display:grid;gap:10px">Cargando movimientos…</div></section>
     <section class="gestion-productos" id="seccionAnaliticas" style="margin-bottom:20px"><div class="cabecera-seccion"><div><h2>📊 Estadísticas del negocio</h2><p style="color:#777;margin-top:5px">Consulta ventas, productos y desempeño operativo.</p></div><select id="periodoAnaliticas" onchange="cargarAnaliticas(this.value)"><option value="7">7 días</option><option value="30">30 días</option><option value="90">90 días</option></select></div><div id="panelAnaliticas">Cargando estadísticas…</div></section>
     <section class="gestion-productos" id="seccionPos" style="margin-bottom:20px;display:none"><div class="cabecera-seccion"><div><h2>🧾 Punto de venta</h2><p style="color:#777;margin-top:5px">Registra ventas en mostrador sin crear pedidos de reparto.</p></div><strong id="posResumen">$0.00 hoy</strong></div><div id="posCaja" style="margin-bottom:16px"></div><div id="posProductos" class="productos"></div><div id="posCarrito" style="margin-top:15px"></div><h3 style="margin-top:20px">Ventas recientes</h3><div id="posHistorial"></div></section>
+    <section class="gestion-productos" id="seccionPromociones" style="margin-bottom:20px"><div class="cabecera-seccion"><div><h2>🔥 Ofertas de Sayula</h2><p style="color:#777;margin-top:5px">Publica una promoción local sin cambiar precios automáticamente.</p></div></div><form class="form-producto" onsubmit="crearPromocion(event)"><input id="promoTitulo" maxlength="100" placeholder="Nombre de la promoción" required><input id="promoVigencia" type="datetime-local"><textarea id="promoDescripcion" class="descripcion" maxlength="300" placeholder="Describe claramente qué incluye" required></textarea><button>Publicar promoción</button></form><div id="listaPromociones" class="productos"></div></section>
     <section class="gestion-productos" id="seccionProductos">
         <div class="cabecera-seccion"><div><h2>🍔 Mi menú</h2><p style="color:#777;margin-top:5px">Crea productos y controla lo que está disponible.</p></div><strong id="totalProductos">0 productos</strong></div>
         <form class="form-producto" onsubmit="guardarProducto(event)">
@@ -930,9 +931,13 @@ function escapar(valor){
 
 }
 
+async function cargarPromociones(){try{const response=await fetch('/api/restaurant/promotions',{headers:{Authorization:'Bearer '+obtenerToken()}}),items=await response.json();if(response.status===403){seccionPromociones.style.display='none';return}if(!response.ok)throw new Error(items.error);listaPromociones.innerHTML=items.length?items.map(p=>`<article class="producto"><div><strong>${escapar(p.title)}</strong><p>${escapar(p.description)}</p><small>${p.active?'Visible':'Pausada'}${p.expires_at?' · vence '+new Date(p.expires_at).toLocaleString('es-MX'):''}</small></div><button onclick="cambiarPromocion(${p.id},${!p.active})">${p.active?'Pausar':'Activar'}</button></article>`).join(''):'Todavía no publicas promociones.'}catch(e){listaPromociones.textContent=e.message}}
+async function crearPromocion(event){event.preventDefault();try{const response=await fetch('/api/restaurant/promotions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+obtenerToken()},body:JSON.stringify({title:promoTitulo.value,description:promoDescripcion.value,expiresAt:promoVigencia.value?new Date(promoVigencia.value).toISOString():null})}),data=await response.json();if(!response.ok)throw new Error(data.error);event.target.reset();cargarPromociones()}catch(e){alert(e.message)}}
+async function cambiarPromocion(id,active){const response=await fetch('/api/restaurant/promotions/'+id,{method:'PATCH',headers:{'Content-Type':'application/json',Authorization:'Bearer '+obtenerToken()},body:JSON.stringify({active})}),data=await response.json();if(!response.ok)return alert(data.error);cargarPromociones()}
+
 if(comprobarAcceso()){
 
-    cargarPanel();
+    cargarPanel();cargarPromociones();
 
     setInterval(
         cargarPanel,
