@@ -287,6 +287,12 @@ header button{
         <p id="estimadoOperacion" style="margin-top:10px;color:#6d625b"></p>
     </section>
 
+    <section class="gestion-productos" id="seccionHorarios" style="margin-bottom:20px">
+        <div class="cabecera-seccion"><div><h2>🕐 Horario semanal</h2><p style="color:#777;margin-top:5px">El servidor impedirá pedidos fuera de estos horarios, usando la hora de Sayula.</p></div></div>
+        <div id="horariosSemana" class="productos">Cargando horarios…</div>
+        <button type="button" onclick="guardarHorarios()">Guardar horario semanal</button>
+    </section>
+
     <section class="gestion-productos" id="seccionEquipo" style="margin-bottom:20px;display:none">
         <div class="cabecera-seccion"><div><h2>👥 Equipo del restaurante</h2><p style="color:#777;margin-top:5px">Crea accesos individuales. No compartas la contraseña del dueño.</p></div></div>
         <form class="form-producto" onsubmit="crearEmpleado(event)">
@@ -476,6 +482,7 @@ function mostrarRestaurante(datos){
 function aplicarPermisos(acceso){
     perfilNegocio.style.display=acceso.isOwner?'flex':'none';
     seccionDisponibilidad.style.display=acceso.isOwner?'block':'none';
+    seccionHorarios.style.display=acceso.isOwner?'block':'none';
     seccionEquipo.style.display=acceso.isOwner?'block':'none';
     seccionFinanzas.style.display=acceso.canViewFinance?'block':'none';
     seccionAnaliticas.style.display=acceso.canViewFinance?'block':'none';
@@ -484,6 +491,7 @@ function aplicarPermisos(acceso){
     if(acceso.canUsePos)cargarPos();
     if(acceso.canViewFinance)cargarAnaliticas(periodoAnaliticas.value);
     if(acceso.isOwner)cargarEmpleados();
+    if(acceso.isOwner)cargarHorarios();
 }
 
 async function cargarEmpleados(){
@@ -493,6 +501,8 @@ async function crearEmpleado(event){event.preventDefault();try{await solicitudPr
 async function actualizarEmpleado(id){const tarjeta=listaEmpleados.querySelector(`[data-employee-id="${id}"]`);if(!tarjeta)return;const checks=tarjeta.querySelectorAll('input[type=checkbox]');try{await solicitudProducto('/api/restaurant/employees/'+id,'PATCH',{canManageOrders:checks[0].checked,canManageProducts:checks[1].checked,canViewFinance:checks[2].checked,canUsePos:checks[3].checked,active:checks[4].checked});await cargarEmpleados();}catch(e){alert('❌ '+e.message);await cargarEmpleados();}}
 
 async function guardarDisponibilidad(event){event.preventDefault();try{const result=await solicitudProducto('/api/restaurant/availability','PUT',{status:estadoNegocio.value,prepMinutes:Number(minutosPreparacion.value),specialHours:horarioEspecial.value});alert('✅ Disponibilidad actualizada. Tiempo estimado: '+result.estimatedPrepMinutes+' minutos.');await cargarPanel()}catch(error){alert('❌ '+error.message)}}
+async function cargarHorarios(){try{const response=await fetch('/api/restaurant/business-hours',{headers:{Authorization:'Bearer '+obtenerToken()}}),data=await response.json();if(!response.ok)throw new Error(data.error);const defaults=Array.from({length:7},(_,weekday)=>({weekday,is_closed:weekday===0?1:0,opens_at:'09:00',closes_at:'20:00'})),rows=data.configured?data.hours:defaults,names=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];horariosSemana.innerHTML=rows.map(row=>`<article class="producto horario-dia" data-day="${row.weekday}" style="display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center"><strong>${names[row.weekday]}</strong><label><input class="cerrado" type="checkbox" ${row.is_closed?'checked':''} onchange="this.closest('.horario-dia').classList.toggle('inactivo',this.checked)"> Cerrado</label><input class="abre" type="time" value="${row.opens_at}"><input class="cierra" type="time" value="${row.closes_at}"></article>`).join('');}catch(e){horariosSemana.textContent=e.message}}
+async function guardarHorarios(){const hours=[...horariosSemana.querySelectorAll('.horario-dia')].map(row=>({weekday:Number(row.dataset.day),closed:row.querySelector('.cerrado').checked,opensAt:row.querySelector('.abre').value,closesAt:row.querySelector('.cierra').value}));try{await solicitudProducto('/api/restaurant/business-hours','PUT',{hours});alert('✅ Horario semanal guardado.');await cargarHorarios()}catch(e){alert('❌ '+e.message)}}
 
 function mostrarProductos(productos){
     const contenedor=document.getElementById('productos');
