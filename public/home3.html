@@ -1869,7 +1869,7 @@ function cuenta(){
     if(token && usuario){
         datosCuenta.innerHTML='<strong>'+escapar(usuario.name||usuario.username||'Usuario')+'</strong><br><small>'+escapar(usuario.email||'Correo no disponible')+'</small>';
         const panelPorRol={restaurant:"<button class='primary' onclick=\"location.href='/restaurant.html'\">🍽️ Panel del restaurante</button>",restaurant_employee:"<button class='primary' onclick=\"location.href='/restaurant.html'\">🍽️ Panel del restaurante</button>",delivery:"<button class='primary' onclick=\"location.href='/delivery.html'\">🛵 Panel del repartidor</button>",admin:"<button class='primary' onclick=\"location.href='/admin.html'\">🛡️ Panel administrativo</button>"};
-        accionesCuenta.innerHTML=(panelPorRol[usuario.role]||"<button class='primary' onclick=\"location.href='/tracking.html'\">📍 Mis pedidos y seguimiento</button>")+"<button onclick=\"location.href='/account.html'\">🔐 Seguridad y contraseña</button><button class='danger' onclick='cerrarSesion()'>🚪 Cerrar sesión</button>";
+        accionesCuenta.innerHTML=(panelPorRol[usuario.role]||"<button class='primary' onclick=\"location.href='/tracking.html'\">📍 Mis pedidos y seguimiento</button><button onclick=\"location.href='/group-order.html'\">👥 Pedido grupal</button>")+"<button onclick=\"location.href='/help.html'\">🆘 Centro de ayuda</button><button onclick=\"location.href='/account.html'\">🔐 Seguridad y contraseña</button><button class='danger' onclick='cerrarSesion()'>🚪 Cerrar sesión</button>";
         panelCuenta.classList.add('visible');
         return;
     }
@@ -1963,6 +1963,7 @@ function inicio(){
 
 window.addEventListener('DOMContentLoaded', function(){
     cargarRestaurantes();cargarPromocionesLocales();
+    if(new URLSearchParams(location.search).get('openCart')==='1')setTimeout(carrito,250);
     fetch('/api/public-config').then(response=>response.json()).then(config=>{const option=document.getElementById('opcionMercadoPago');if(option&&config.onlinePaymentEnabled){option.hidden=false;option.disabled=false;option.textContent=config.onlinePaymentMode==='test'?'Mercado Pago · modo de prueba':'Mercado Pago';}}).catch(()=>{});
 });
 
