@@ -455,6 +455,32 @@ CREATE TABLE IF NOT EXISTS group_orders(id INTEGER PRIMARY KEY AUTOINCREMENT,inv
 CREATE INDEX IF NOT EXISTS idx_group_orders_creator ON group_orders(creator_user_id,status,created_at);
 CREATE TABLE IF NOT EXISTS group_order_items(id INTEGER PRIMARY KEY AUTOINCREMENT,group_order_id INTEGER NOT NULL,participant_user_id INTEGER NOT NULL,participant_name TEXT NOT NULL,product_id INTEGER NOT NULL,quantity INTEGER NOT NULL CHECK(quantity BETWEEN 1 AND 20),variant TEXT,addons_json TEXT NOT NULL DEFAULT '[]',created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(group_order_id) REFERENCES group_orders(id) ON DELETE CASCADE,FOREIGN KEY(participant_user_id) REFERENCES users(id) ON DELETE CASCADE,FOREIGN KEY(product_id) REFERENCES products(id));
 CREATE INDEX IF NOT EXISTS idx_group_order_items_group ON group_order_items(group_order_id,id);
+CREATE TABLE IF NOT EXISTS menu_drafts(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    restaurant_id INTEGER NOT NULL,
+    source_type TEXT NOT NULL CHECK(source_type IN ('text','csv')),
+    source_name TEXT,
+    status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','published','discarded')),
+    created_by_user_id INTEGER NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    published_at TEXT,
+    FOREIGN KEY(restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE,
+    FOREIGN KEY(created_by_user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_menu_drafts_restaurant ON menu_drafts(restaurant_id,status,id DESC);
+CREATE TABLE IF NOT EXISTS menu_draft_items(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    draft_id INTEGER NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    price REAL,
+    category TEXT NOT NULL DEFAULT 'Comida',
+    selected INTEGER NOT NULL DEFAULT 1,
+    validation_error TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY(draft_id) REFERENCES menu_drafts(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_menu_draft_items_draft ON menu_draft_items(draft_id,sort_order,id);
 CREATE TABLE IF NOT EXISTS order_surveys(order_id INTEGER PRIMARY KEY,customer_id INTEGER NOT NULL,everything_ok INTEGER NOT NULL CHECK(everything_ok IN (0,1)),created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE,FOREIGN KEY(customer_id) REFERENCES users(id) ON DELETE CASCADE);
 `);
 ensureColumn('orders','coupon_id','INTEGER');
@@ -479,5 +505,6 @@ db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-09-phase-5','Cupones, créditos, fidelidad, referidos, promociones locales y favoritos');
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-09-phase-6','Metas, progreso, rachas, bonos y niveles para repartidores');
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-10-phase-7','Chat privado por pedido, pedidos grupales, encuesta rápida y centro de ayuda');
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-10-phase-8','Borradores de menú importados y publicación manual segura');
 
 module.exports = db;
