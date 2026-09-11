@@ -291,6 +291,7 @@ header button{
         <div class="cabecera-seccion"><div><h2>🕐 Horario semanal</h2><p style="color:#777;margin-top:5px">El servidor impedirá pedidos fuera de estos horarios, usando la hora de Sayula.</p></div></div>
         <div id="horariosSemana" class="productos">Cargando horarios…</div>
         <button type="button" onclick="guardarHorarios()">Guardar horario semanal</button>
+        <h3 style="margin-top:20px">Vacaciones y días especiales</h3><form class="form-producto" onsubmit="guardarHorarioEspecial(event)"><input id="fechaEspecial" type="date" required><label><input id="cerradoEspecial" type="checkbox" checked> Cerrado todo el día</label><input id="abreEspecial" type="time" value="09:00"><input id="cierraEspecial" type="time" value="20:00"><input id="notaEspecial" maxlength="150" placeholder="Motivo, por ejemplo: Día festivo" required><button>Guardar fecha especial</button></form><div id="listaHorariosEspeciales"></div>
     </section>
 
     <section class="gestion-productos" id="seccionEquipo" style="margin-bottom:20px;display:none">
@@ -492,6 +493,7 @@ function aplicarPermisos(acceso){
     if(acceso.canViewFinance)cargarAnaliticas(periodoAnaliticas.value);
     if(acceso.isOwner)cargarEmpleados();
     if(acceso.isOwner)cargarHorarios();
+    if(acceso.isOwner)cargarHorariosEspeciales();
 }
 
 async function cargarEmpleados(){
@@ -504,6 +506,9 @@ async function guardarDisponibilidad(event){event.preventDefault();try{const res
 async function cargarHorarios(){try{const response=await fetch('/api/restaurant/business-hours',{headers:{Authorization:'Bearer '+obtenerToken()}}),data=await response.json();if(!response.ok)throw new Error(data.error);const defaults=Array.from({length:7},(_,weekday)=>({weekday,is_closed:weekday===0?1:0,opens_at:'09:00',closes_at:'20:00'})),rows=data.configured?data.hours:defaults,names=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];horariosSemana.innerHTML=rows.map(row=>`<article class="producto horario-dia" data-day="${row.weekday}" style="display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center"><strong>${names[row.weekday]}</strong><label><input class="cerrado" type="checkbox" ${row.is_closed?'checked':''} onchange="this.closest('.horario-dia').classList.toggle('inactivo',this.checked)"> Cerrado</label><input class="abre" type="time" value="${row.opens_at}"><input class="cierra" type="time" value="${row.closes_at}"></article>`).join('');}catch(e){horariosSemana.textContent=e.message}}
 async function guardarHorarios(){const hours=[...horariosSemana.querySelectorAll('.horario-dia')].map(row=>({weekday:Number(row.dataset.day),closed:row.querySelector('.cerrado').checked,opensAt:row.querySelector('.abre').value,closesAt:row.querySelector('.cierra').value}));try{await solicitudProducto('/api/restaurant/business-hours','PUT',{hours});alert('✅ Horario semanal guardado.');await cargarHorarios()}catch(e){alert('❌ '+e.message)}}
 
+async function guardarHorarioEspecial(event){event.preventDefault();try{await solicitudProducto('/api/restaurant/special-hours','POST',{date:fechaEspecial.value,closed:cerradoEspecial.checked,opensAt:abreEspecial.value,closesAt:cierraEspecial.value,note:notaEspecial.value});event.target.reset();cerradoEspecial.checked=true;await cargarHorariosEspeciales();alert('✅ Fecha especial guardada.')}catch(e){alert('❌ '+e.message)}}
+async function cargarHorariosEspeciales(){try{const response=await fetch('/api/restaurant/special-hours',{headers:{Authorization:'Bearer '+obtenerToken()}}),rows=await response.json();listaHorariosEspeciales.innerHTML=rows.map(row=>`<p><strong>${row.service_date}</strong> · ${row.is_closed?'Cerrado':row.opens_at+'–'+row.closes_at} · ${escapar(row.note)} <button onclick="eliminarHorarioEspecial(${row.id})">Eliminar</button></p>`).join('')||'<p>No hay fechas especiales.</p>';}catch(e){listaHorariosEspeciales.textContent=e.message}}
+async function eliminarHorarioEspecial(id){if(!confirm('¿Eliminar esta fecha especial?'))return;try{await solicitudProducto('/api/restaurant/special-hours/'+id,'DELETE');await cargarHorariosEspeciales()}catch(e){alert(e.message)}}
 function mostrarProductos(productos){
     const contenedor=document.getElementById('productos');
     document.getElementById('totalProductos').textContent=productos.length+' producto'+(productos.length===1?'':'s');

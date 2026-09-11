@@ -491,6 +491,8 @@ CREATE TABLE IF NOT EXISTS restaurant_business_hours(
     PRIMARY KEY(restaurant_id,weekday),
     FOREIGN KEY(restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS restaurant_special_hours(id INTEGER PRIMARY KEY AUTOINCREMENT,restaurant_id INTEGER NOT NULL,service_date TEXT NOT NULL,is_closed INTEGER NOT NULL DEFAULT 1,opens_at TEXT,closes_at TEXT,note TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(restaurant_id,service_date),FOREIGN KEY(restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE);
+CREATE INDEX IF NOT EXISTS idx_restaurant_special_hours_date ON restaurant_special_hours(restaurant_id,service_date);
 CREATE TABLE IF NOT EXISTS order_surveys(order_id INTEGER PRIMARY KEY,customer_id INTEGER NOT NULL,everything_ok INTEGER NOT NULL CHECK(everything_ok IN (0,1)),created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE,FOREIGN KEY(customer_id) REFERENCES users(id) ON DELETE CASCADE);
 `);
 ensureColumn('orders','coupon_id','INTEGER');
@@ -517,5 +519,6 @@ db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-10-phase-7','Chat privado por pedido, pedidos grupales, encuesta rápida y centro de ayuda');
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-10-phase-8','Borradores de menú importados y publicación manual segura');
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-10-pilot-hours','Horarios semanales operativos validados en servidor');
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-11-special-hours','Cierres y horarios especiales por fecha');
 
 module.exports = db;
