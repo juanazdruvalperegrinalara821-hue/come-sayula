@@ -27,7 +27,7 @@ const ORDER_RESPONSE_MINUTES=Math.min(60,Math.max(3,Number(process.env.ORDER_RES
 const NOTIFICATION_WORKER_INTERVAL_MS=Math.max(100,Number(process.env.NOTIFICATION_WORKER_INTERVAL_MS)||60*1000);
 const ORDER_RATE_LIMIT_MAX=Math.min(200,Math.max(12,Number(process.env.ORDER_RATE_LIMIT_MAX)||12));
 const BACKUP_RETENTION_COUNT=Math.min(90,Math.max(2,Number(process.env.BACKUP_RETENTION_COUNT)||7));
-const PLATFORM_COMMISSION_PERCENT=Math.min(100,Math.max(0,Number(process.env.PLATFORM_COMMISSION_PERCENT)||0));
+const PLATFORM_COMMISSION_PERCENT=Math.min(100,Math.max(0,Number(process.env.PLATFORM_COMMISSION_PERCENT??5)));
 const SCHEDULE_MIN_MINUTES=45;
 const SCHEDULE_MAX_DAYS=7;
 const COURIER_SCHEDULE_WINDOW_MINUTES=60;
@@ -86,7 +86,7 @@ const SECRET=process.env.JWT_SECRET||(
         : (()=>{const value=crypto.randomBytes(48).toString('hex');fs.writeFileSync(secretPath,value,{mode:0o600});return value;})()
 );
 const JWT_OPTIONS={algorithm:'HS256',issuer:'come-sayula',audience:'come-sayula-web'};
-const signToken=user=>jwt.sign({...user,sessionVersion:Number(user.session_version||user.sessionVersion||0)},SECRET,{...JWT_OPTIONS,expiresIn:'8h'});
+const signToken=user=>jwt.sign({...user,sessionVersion:Number(user.session_version||user.sessionVersion||0)},SECRET,{...JWT_OPTIONS,expiresIn:'30d'});
 const normalizeEmail=value=>String(value||'').trim().toLowerCase().slice(0,254);
 const hasSensitiveCardData=body=>['cardNumber','card_number','pan','cvv','cvc','securityCode','expiry','expiration'].some(key=>body&&body[key]!=null);
 const normalizeChoices=value=>{const rows=Array.isArray(value)?value:[];return rows.slice(0,20).map(row=>({name:String(row?.name||'').trim().slice(0,60),priceDelta:Math.round(Number(row?.priceDelta||0)*100)/100})).filter(row=>row.name&&Number.isFinite(row.priceDelta)&&row.priceDelta>=0&&row.priceDelta<=5000)};

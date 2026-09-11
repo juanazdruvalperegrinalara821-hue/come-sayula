@@ -44,7 +44,7 @@ label{display:block;font-size:13px;font-weight:bold;margin:13px 0 6px;color:#554
         <div id="accesoGoogle"><div class="separador">o continúa como cliente</div><div id="google"></div></div>
     </section>
 </main>
-<script>
+<script src="/session.js"></script><script>
 const CLIENT_ID='846821366103-clbjraiah8qvdb5gia3op8h8rsu4c8ba.apps.googleusercontent.com';
 let modo='login',rol='customer';
 const nombres={customer:'cliente',restaurant:'restaurante',delivery:'repartidor',admin:'administrador'};
@@ -96,7 +96,7 @@ async function enviar(evento){
     }
 }
 
-function guardarSesion(datos){sessionStorage.setItem('cs_token',datos.token);sessionStorage.setItem('cs_user',JSON.stringify(datos.user));}
+function guardarSesion(datos){CS_SESSION.save(datos);}
 function redirigir(tipo){location.href=['restaurant','restaurant_employee'].includes(tipo)?'/restaurant.html':tipo==='delivery'?'/delivery.html':tipo==='admin'?'/admin.html':'/home3.html';}
 function mostrarMensaje(texto,tipo=''){const elemento=document.getElementById('mensaje');elemento.textContent=texto;elemento.className='mensaje '+tipo;}
 
