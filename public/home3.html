@@ -823,9 +823,10 @@ async function abrirRestaurante(id,nombre){
         }
 
         const datos = await respuesta.json();
+        const horario=datos.restaurant?.listingType==='directory'?{configured:false,openNow:true,hours:[]}:await fetch('/api/restaurants/'+id+'/business-hours').then(response=>response.ok?response.json():({configured:false,openNow:true,hours:[]}));
         const menu = datos.products || [];
         const esDirectorio = datos.restaurant?.listingType === 'directory';
-        const noDisponible=['closed','paused'].includes(datos.restaurant?.operational_status);
+        const noDisponible=['closed','paused'].includes(datos.restaurant?.operational_status)||(horario.configured&&!horario.openNow);
 
         const restaurante = document.querySelector(
             `.restaurant[data-id="${id}"]`
@@ -933,8 +934,9 @@ async function abrirRestaurante(id,nombre){
                         </h1>
 
                         <p>
-                            ${noDisponible?'En este momento no recibe pedidos.':`Tiempo estimado de preparación: ${Number(datos.restaurant?.estimatedPrepMinutes||30)} minutos.`}
+                            ${noDisponible?'🔴 En este momento no recibe pedidos.':`🟢 Abierto · Tiempo estimado de preparación: ${Number(datos.restaurant?.estimatedPrepMinutes||30)} minutos.`}
                         </p>
+                        ${horario.configured?`<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:bold">Ver horario semanal · hora de Sayula</summary><div style="margin-top:8px">${horario.hours.map(row=>`<div>${['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'][row.weekday]}: ${row.is_closed?'Cerrado':escapar(row.opens_at)+'–'+escapar(row.closes_at)}</div>`).join('')}</div></details>`:''}
                         ${datos.restaurant?.special_hours?`<p><strong>Horario especial:</strong> ${escapar(datos.restaurant.special_hours)}</p>`:''}
 
                     </div>
