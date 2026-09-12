@@ -1331,7 +1331,7 @@ app.get('/api/orders/:id/tracking',auth,role(['customer']),(req,res)=>{
                u.id AS delivery_user_id,u.name AS delivery_name,u.phone AS delivery_phone,dp.internal_number AS delivery_internal_number,dp.vehicle_type AS delivery_vehicle_type,dp.vehicle_description AS delivery_vehicle_description,dp.verification_status AS delivery_verification_status,
                da.latitude,da.longitude,da.location_accuracy,
                da.location_updated_at,da.accepted_at,da.delivered_at,
-               rv.restaurant_rating,rv.delivery_rating,rv.comment AS review_comment,rv.tip_amount,os.everything_ok AS survey_everything_ok
+               rv.restaurant_rating,rv.delivery_rating,rv.food_rating,rv.completeness_rating,rv.preparation_rating,rv.punctuality_rating,rv.courtesy_rating,rv.delivery_quality_rating,rv.comment AS review_comment,rv.tip_amount,os.everything_ok AS survey_everything_ok
         FROM orders o
         JOIN restaurants r ON r.id=o.restaurant_id
         LEFT JOIN delivery_assignments da ON da.order_id=o.id
@@ -1364,16 +1364,16 @@ app.get('/api/orders/:id/tracking',auth,role(['customer']),(req,res)=>{
 });
 
 app.post('/api/orders/:id/review',auth,role(['customer']),rateLimit('order-review',12,60*60*1000),(req,res)=>{
-    const orderId=Number(req.params.id),restaurantRating=Number(req.body.restaurantRating),deliveryRating=req.body.deliveryRating==null||req.body.deliveryRating===''?null:Number(req.body.deliveryRating),tipAmount=Math.round(Number(req.body.tipAmount||0)*100)/100,comment=String(req.body.comment||'').trim().slice(0,500);
-    if(!Number.isInteger(orderId)||orderId<=0||!Number.isInteger(restaurantRating)||restaurantRating<1||restaurantRating>5||deliveryRating!==null&&(!Number.isInteger(deliveryRating)||deliveryRating<1||deliveryRating>5)||!Number.isFinite(tipAmount)||tipAmount<0||tipAmount>1000)return res.status(400).json({error:'Calificación o propina inválida'});
+    const orderId=Number(req.params.id),restaurantRating=Number(req.body.restaurantRating),deliveryRating=req.body.deliveryRating==null||req.body.deliveryRating===''?null:Number(req.body.deliveryRating),tipAmount=Math.round(Number(req.body.tipAmount||0)*100)/100,comment=String(req.body.comment||'').trim().slice(0,500),optionalRating=name=>req.body[name]==null||req.body[name]===''?null:Number(req.body[name]),details={foodRating:optionalRating('foodRating'),completenessRating:optionalRating('completenessRating'),preparationRating:optionalRating('preparationRating'),punctualityRating:optionalRating('punctualityRating'),courtesyRating:optionalRating('courtesyRating'),deliveryQualityRating:optionalRating('deliveryQualityRating')},invalidDetail=Object.values(details).some(value=>value!==null&&(!Number.isInteger(value)||value<1||value>5));
+    if(!Number.isInteger(orderId)||orderId<=0||!Number.isInteger(restaurantRating)||restaurantRating<1||restaurantRating>5||deliveryRating!==null&&(!Number.isInteger(deliveryRating)||deliveryRating<1||deliveryRating>5)||invalidDetail||!Number.isFinite(tipAmount)||tipAmount<0||tipAmount>1000)return res.status(400).json({error:'Calificación o propina inválida'});
     const order=db.prepare(`SELECT o.id,o.restaurant_id,o.status,da.delivery_user_id FROM orders o LEFT JOIN delivery_assignments da ON da.order_id=o.id WHERE o.id=? AND o.customer_id=?`).get(orderId,req.user.id);
     if(!order)return res.status(404).json({error:'Pedido no encontrado'});
     if(order.status!=='delivered')return res.status(409).json({error:'Podrás calificar cuando el pedido haya sido entregado'});
     if(deliveryRating!==null&&!order.delivery_user_id)return res.status(400).json({error:'El pedido no tiene repartidor para calificar'});
     if(tipAmount>0&&!order.delivery_user_id)return res.status(400).json({error:'El pedido no tiene repartidor para recibir propina'});
     try{
-        db.prepare(`INSERT INTO order_reviews(order_id,customer_id,restaurant_id,delivery_user_id,restaurant_rating,delivery_rating,comment,tip_amount,tip_method) VALUES(?,?,?,?,?,?,?,?, 'cash')`).run(order.id,req.user.id,order.restaurant_id,order.delivery_user_id,restaurantRating,deliveryRating,comment,tipAmount);
-        db.prepare('UPDATE order_financials SET tip=?,courier_due=delivery_fee+?,updated_at=CURRENT_TIMESTAMP WHERE order_id=?').run(tipAmount,tipAmount,order.id);audit(req,'order_review_created','order',order.id);res.status(201).json({ok:true,tipAmount,tipMethod:'cash'});
+        db.prepare(`INSERT INTO order_reviews(order_id,customer_id,restaurant_id,delivery_user_id,restaurant_rating,delivery_rating,food_rating,completeness_rating,preparation_rating,punctuality_rating,courtesy_rating,delivery_quality_rating,comment,tip_amount,tip_method) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'cash')`).run(order.id,req.user.id,order.restaurant_id,order.delivery_user_id,restaurantRating,deliveryRating,details.foodRating,details.completenessRating,details.preparationRating,details.punctualityRating,details.courtesyRating,details.deliveryQualityRating,comment,tipAmount);
+        db.prepare('UPDATE order_financials SET tip=?,courier_due=delivery_fee+?,updated_at=CURRENT_TIMESTAMP WHERE order_id=?').run(tipAmount,tipAmount,order.id);audit(req,'order_review_created','order',order.id);res.status(201).json({ok:true,tipAmount,tipMethod:'cash',details});
     }catch(error){if(String(error.code||'').includes('CONSTRAINT'))return res.status(409).json({error:'Este pedido ya fue calificado'});throw error;}
 });
 
