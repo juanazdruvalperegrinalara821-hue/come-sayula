@@ -383,6 +383,13 @@ app.get('/api/admin/restaurants',auth,role(['admin']),(req,res)=>{
         LEFT JOIN order_reviews rv ON rv.restaurant_id=r.id
         GROUP BY r.id ORDER BY r.featured DESC,r.priority DESC,r.name`).all());
 });
+app.get('/api/admin/service-quality',auth,role(['admin']),(req,res)=>{
+    const summary=db.prepare(`SELECT COUNT(DISTINCT rv.id) reviews,ROUND(AVG(rv.restaurant_rating),1) restaurant_average,ROUND(AVG(rv.delivery_rating),1) delivery_average,(SELECT COUNT(*) FROM order_surveys os JOIN orders so ON so.id=os.order_id WHERE os.everything_ok=0 AND so.is_demo=0) negative_surveys FROM order_reviews rv JOIN orders o ON o.id=rv.order_id WHERE o.is_demo=0`).get();
+    const restaurants=db.prepare(`SELECT r.id,r.name,COUNT(rv.id) reviews,ROUND(AVG(rv.restaurant_rating),1) overall,ROUND(AVG(rv.food_rating),1) food,ROUND(AVG(rv.completeness_rating),1) completeness,ROUND(AVG(rv.preparation_rating),1) preparation FROM restaurants r JOIN order_reviews rv ON rv.restaurant_id=r.id JOIN orders o ON o.id=rv.order_id AND o.is_demo=0 GROUP BY r.id ORDER BY overall,r.name`).all();
+    const couriers=db.prepare(`SELECT u.id,u.name,dp.internal_number,COUNT(rv.id) reviews,ROUND(AVG(rv.delivery_rating),1) overall,ROUND(AVG(rv.punctuality_rating),1) punctuality,ROUND(AVG(rv.courtesy_rating),1) courtesy,ROUND(AVG(rv.delivery_quality_rating),1) delivery_quality FROM users u LEFT JOIN delivery_profiles dp ON dp.delivery_user_id=u.id JOIN order_reviews rv ON rv.delivery_user_id=u.id JOIN orders o ON o.id=rv.order_id AND o.is_demo=0 WHERE u.role='delivery' GROUP BY u.id ORDER BY overall,u.name`).all();
+    const alerts=db.prepare(`SELECT o.id order_id,r.name restaurant_name,u.name delivery_name,rv.restaurant_rating,rv.delivery_rating,rv.comment,COALESCE(os.everything_ok,1) everything_ok,COALESCE(rv.created_at,os.created_at) created_at FROM orders o JOIN restaurants r ON r.id=o.restaurant_id LEFT JOIN order_reviews rv ON rv.order_id=o.id LEFT JOIN order_surveys os ON os.order_id=o.id LEFT JOIN delivery_assignments da ON da.order_id=o.id AND da.status='accepted' LEFT JOIN users u ON u.id=da.delivery_user_id WHERE o.is_demo=0 AND (os.everything_ok=0 OR rv.restaurant_rating<=2 OR rv.delivery_rating<=2) ORDER BY COALESCE(rv.created_at,os.created_at) DESC LIMIT 50`).all();
+    res.json({summary,restaurants,couriers,alerts});
+});
 app.patch('/api/admin/restaurants/:id/visibility',auth,role(['admin']),(req,res)=>{
     const id=Number(req.params.id),priority=Number(req.body.priority),category=String(req.body.category||'Otros').trim().slice(0,40),featured=req.body.featured?1:0;
     if(!Number.isInteger(id)||id<=0||!Number.isInteger(priority)||priority<0||priority>100||!category)return res.status(400).json({error:'Visibilidad inválida'});
