@@ -77,7 +77,7 @@ fs.mkdirSync(settlementProofDir,{recursive:true});
 const deliveryProofDir=path.join(dataDir,'delivery-proofs');
 fs.mkdirSync(deliveryProofDir,{recursive:true});
 const purgeExpiredDeliveryProofs=()=>{for(const proof of db.prepare("SELECT id,photo_path FROM delivery_proofs WHERE datetime(delete_after)<=CURRENT_TIMESTAMP").all()){try{if(proof.photo_path)fs.unlinkSync(path.join(deliveryProofDir,path.basename(proof.photo_path)))}catch(error){if(error.code!=='ENOENT')console.error('DELIVERY PROOF CLEANUP ERROR',error.message)}db.prepare('DELETE FROM delivery_proofs WHERE id=?').run(proof.id)}};
-const purgeExperienceData=()=>{db.prepare("DELETE FROM order_messages WHERE datetime(delete_after)<=CURRENT_TIMESTAMP").run();db.prepare("UPDATE group_orders SET status='expired' WHERE status='open' AND datetime(expires_at)<=CURRENT_TIMESTAMP").run();};
+const purgeExperienceData=()=>{db.prepare("DELETE FROM order_messages WHERE datetime(delete_after)<=CURRENT_TIMESTAMP").run();db.prepare("UPDATE group_orders SET status='expired' WHERE status='open' AND datetime(expires_at)<=CURRENT_TIMESTAMP").run();db.prepare("DELETE FROM delivery_locations WHERE datetime(updated_at)<=datetime('now','-24 hours') AND NOT EXISTS(SELECT 1 FROM delivery_assignments da JOIN orders o ON o.id=da.order_id WHERE da.delivery_user_id=delivery_locations.delivery_user_id AND da.status='accepted' AND o.status IN ('assigned','delivering'))").run();};
 purgeExpiredDeliveryProofs();
 purgeExperienceData();
 setInterval(purgeExpiredDeliveryProofs,6*60*60*1000).unref();
@@ -1250,7 +1250,11 @@ app.patch('/api/delivery/orders/:id',auth,role(['delivery']),(req,res)=>{
                 UPDATE delivery_assignments
                 SET
                     status='delivered',
-                    delivered_at=CURRENT_TIMESTAMP
+                    delivered_at=CURRENT_TIMESTAMP,
+                    latitude=NULL,
+                    longitude=NULL,
+                    location_accuracy=NULL,
+                    location_updated_at=NULL
                 WHERE order_id=?
                 AND delivery_user_id=?
                 AND status='accepted'
@@ -1283,6 +1287,7 @@ app.patch('/api/delivery/orders/:id',auth,role(['delivery']),(req,res)=>{
             const trustActors=db.prepare('SELECT o.customer_id,r.owner_id FROM orders o JOIN restaurants r ON r.id=o.restaurant_id WHERE o.id=?').get(orderId);adjustTrust(trustActors.customer_id,1);adjustTrust(trustActors.owner_id,1);adjustTrust(req.user.id,1);rewardDeliveredOrder(orderId);recordCourierAchievement(req.user.id,orderId);
             recordOrderStatus(orderId,'delivering','delivered',req.user,proofName?'Entrega sin contacto con evidencia fotográfica':'PIN del cliente validado');
             db.prepare("UPDATE delivery_profiles SET status='available',updated_at=CURRENT_TIMESTAMP WHERE delivery_user_id=?").run(req.user.id);
+            db.prepare("DELETE FROM delivery_locations WHERE delivery_user_id=? AND NOT EXISTS(SELECT 1 FROM delivery_assignments da JOIN orders o ON o.id=da.order_id WHERE da.delivery_user_id=? AND da.status='accepted' AND o.status IN ('assigned','delivering'))").run(req.user.id,req.user.id);
 
             return true;
         })();}catch(error){if(proofName)try{fs.unlinkSync(path.join(deliveryProofDir,proofName))}catch(_){}throw error;}
