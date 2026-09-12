@@ -85,6 +85,8 @@ ensureColumn('restaurants','featured','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('restaurants','operational_status',"TEXT NOT NULL DEFAULT 'open'");
 ensureColumn('restaurants','prep_minutes','INTEGER NOT NULL DEFAULT 30');
 ensureColumn('restaurants','special_hours','TEXT');
+ensureColumn('restaurants','auto_saturation_enabled','INTEGER NOT NULL DEFAULT 0');
+ensureColumn('restaurants','auto_saturation_limit','INTEGER NOT NULL DEFAULT 5');
 ensureColumn('products','category',"TEXT NOT NULL DEFAULT 'Comida'");
 ensureColumn('products','stock_enabled','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('products','stock_quantity','INTEGER NOT NULL DEFAULT 0');

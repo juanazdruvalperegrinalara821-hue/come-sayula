@@ -281,6 +281,8 @@ header button{
         <form class="form-producto" onsubmit="guardarDisponibilidad(event)">
             <select id="estadoNegocio" required><option value="open">🟢 Abierto</option><option value="saturated">🟠 Saturado</option><option value="paused">⏸️ Pedidos pausados</option><option value="closed">🔴 Cerrado</option></select>
             <input id="minutosPreparacion" type="number" min="5" max="180" step="5" required placeholder="Minutos de preparación">
+            <label><input id="saturacionAutomatica" type="checkbox"> Activar saturación automática</label>
+            <input id="limiteSaturacion" type="number" min="1" max="50" step="1" value="5" required placeholder="Pedidos activos para saturarse">
             <input id="horarioEspecial" class="descripcion" maxlength="300" placeholder="Horario especial (opcional)">
             <button type="submit">Guardar disponibilidad</button>
         </form>
@@ -474,9 +476,9 @@ function mostrarRestaurante(datos){
         ? '✅ Ubicación configurada para calcular envíos'
         : '⚠️ Configura la ubicación para calcular el costo de envío';
     const nombres={open:'🟢 Abierto',saturated:'🟠 Saturado',paused:'⏸️ Pedidos pausados',closed:'🔴 Cerrado'};
-    estadoNegocio.value=datos.operational_status||'open';minutosPreparacion.value=datos.prep_minutes||30;horarioEspecial.value=datos.special_hours||'';
-    estadoOperacion.textContent=nombres[estadoNegocio.value]||nombres.open;
-    estimadoOperacion.textContent=`Tiempo mostrado al cliente: ${Number(minutosPreparacion.value)+(estadoNegocio.value==='saturated'?20:0)} minutos${datos.special_hours?' · '+datos.special_hours:''}`;
+    estadoNegocio.value=datos.operational_status||'open';minutosPreparacion.value=datos.prep_minutes||30;horarioEspecial.value=datos.special_hours||'';saturacionAutomatica.checked=Boolean(datos.auto_saturation_enabled);limiteSaturacion.value=datos.auto_saturation_limit||5;
+    estadoOperacion.textContent=datos.auto_saturated?'🟠 Saturado automáticamente':(nombres[estadoNegocio.value]||nombres.open);
+    estimadoOperacion.textContent=`Tiempo mostrado al cliente: ${Number(datos.effective_prep_minutes||minutosPreparacion.value)} minutos · ${Number(datos.active_order_count||0)} pedidos activos${datos.auto_saturation_enabled?' · saturación automática desde '+limiteSaturacion.value:''}${datos.special_hours?' · '+datos.special_hours:''}`;
 
 }
 
@@ -502,7 +504,7 @@ async function cargarEmpleados(){
 async function crearEmpleado(event){event.preventDefault();try{await solicitudProducto('/api/restaurant/employees','POST',{name:empleadoNombre.value,email:empleadoCorreo.value,phone:empleadoTelefono.value,password:empleadoPassword.value,canManageOrders:empleadoPedidos.checked,canManageProducts:empleadoProductos.checked,canViewFinance:empleadoFinanzas.checked,canUsePos:empleadoPos.checked});event.target.reset();empleadoPedidos.checked=true;await cargarEmpleados();alert('✅ Acceso del empleado creado.');}catch(e){alert('❌ '+e.message);}}
 async function actualizarEmpleado(id){const tarjeta=listaEmpleados.querySelector(`[data-employee-id="${id}"]`);if(!tarjeta)return;const checks=tarjeta.querySelectorAll('input[type=checkbox]');try{await solicitudProducto('/api/restaurant/employees/'+id,'PATCH',{canManageOrders:checks[0].checked,canManageProducts:checks[1].checked,canViewFinance:checks[2].checked,canUsePos:checks[3].checked,active:checks[4].checked});await cargarEmpleados();}catch(e){alert('❌ '+e.message);await cargarEmpleados();}}
 
-async function guardarDisponibilidad(event){event.preventDefault();try{const result=await solicitudProducto('/api/restaurant/availability','PUT',{status:estadoNegocio.value,prepMinutes:Number(minutosPreparacion.value),specialHours:horarioEspecial.value});alert('✅ Disponibilidad actualizada. Tiempo estimado: '+result.estimatedPrepMinutes+' minutos.');await cargarPanel()}catch(error){alert('❌ '+error.message)}}
+async function guardarDisponibilidad(event){event.preventDefault();try{const result=await solicitudProducto('/api/restaurant/availability','PUT',{status:estadoNegocio.value,prepMinutes:Number(minutosPreparacion.value),specialHours:horarioEspecial.value,autoSaturationEnabled:saturacionAutomatica.checked,autoSaturationLimit:Number(limiteSaturacion.value)});alert('✅ Disponibilidad actualizada. Tiempo estimado actual: '+result.estimatedPrepMinutes+' minutos.');await cargarPanel()}catch(error){alert('❌ '+error.message)}}
 async function cargarHorarios(){try{const response=await fetch('/api/restaurant/business-hours',{headers:{Authorization:'Bearer '+obtenerToken()}}),data=await response.json();if(!response.ok)throw new Error(data.error);const defaults=Array.from({length:7},(_,weekday)=>({weekday,is_closed:weekday===0?1:0,opens_at:'09:00',closes_at:'20:00'})),rows=data.configured?data.hours:defaults,names=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];horariosSemana.innerHTML=rows.map(row=>`<article class="producto horario-dia" data-day="${row.weekday}" style="display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center"><strong>${names[row.weekday]}</strong><label><input class="cerrado" type="checkbox" ${row.is_closed?'checked':''} onchange="this.closest('.horario-dia').classList.toggle('inactivo',this.checked)"> Cerrado</label><input class="abre" type="time" value="${row.opens_at}"><input class="cierra" type="time" value="${row.closes_at}"></article>`).join('');}catch(e){horariosSemana.textContent=e.message}}
 async function guardarHorarios(){const hours=[...horariosSemana.querySelectorAll('.horario-dia')].map(row=>({weekday:Number(row.dataset.day),closed:row.querySelector('.cerrado').checked,opensAt:row.querySelector('.abre').value,closesAt:row.querySelector('.cierra').value}));try{await solicitudProducto('/api/restaurant/business-hours','PUT',{hours});alert('✅ Horario semanal guardado.');await cargarHorarios()}catch(e){alert('❌ '+e.message)}}
 
