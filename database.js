@@ -425,6 +425,26 @@ CREATE TABLE IF NOT EXISTS dispute_resolutions(
     FOREIGN KEY(issue_id) REFERENCES order_issues(id) ON DELETE CASCADE,
     FOREIGN KEY(decided_by_user_id) REFERENCES users(id)
 );
+CREATE TABLE IF NOT EXISTS corrective_actions(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_user_id INTEGER NOT NULL,
+    issue_id INTEGER NOT NULL,
+    action_type TEXT NOT NULL CHECK(action_type IN ('warning','verification_required','benefit_reduction','temporary_restriction')),
+    reason TEXT NOT NULL,
+    starts_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    expires_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','revoked')),
+    created_by_user_id INTEGER NOT NULL,
+    revoked_by_user_id INTEGER,
+    revoked_at TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(target_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY(issue_id) REFERENCES order_issues(id) ON DELETE CASCADE,
+    FOREIGN KEY(created_by_user_id) REFERENCES users(id),
+    FOREIGN KEY(revoked_by_user_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_corrective_actions_target ON corrective_actions(target_user_id,status,expires_at);
+CREATE INDEX IF NOT EXISTS idx_corrective_actions_admin ON corrective_actions(status,created_at DESC);
 CREATE TABLE IF NOT EXISTS customer_addresses(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     customer_id INTEGER NOT NULL,
