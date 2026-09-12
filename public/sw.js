@@ -1,4 +1,4 @@
-const CACHE='come-sayula-shell-v41';
+const CACHE='come-sayula-shell-v42';
 const SHELL=['/offline.html','/session.js','/menu-import.html','/auth.html','/reset-password.html','/account.html','/legal.html','/home3.html','/tracking.html','/restaurant.html','/delivery.html','/admin.html','/payment-return.html','/feedback.html','/help.html','/group-order.html','/order-chat.js','/order-chat.css','/manifest.webmanifest','/pwa-install.js','/notifications.js','/feedback-launcher.js','/admin-delivery.js','/admin-finance.js','/restaurant-finance.js','/restaurant-analytics.js','/restaurant-pos.js','/ui-dialogs.js','/ui-dialogs.css','/ai-assistant.js','/ai-assistant.css','/icons/icon-192.png','/icons/icon-512.png'];
 // Abre la pantalla correspondiente cuando el usuario toca una notificación.
 self.addEventListener('notificationclick',event=>{event.notification.close();const url=event.notification.data?.url||'/';event.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(windows=>{for(const client of windows){if('focus'in client){client.navigate(url);return client.focus();}}return clients.openWindow?clients.openWindow(url):null;}));});
