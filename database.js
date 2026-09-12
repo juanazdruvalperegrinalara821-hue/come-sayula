@@ -87,6 +87,9 @@ ensureColumn('restaurants','prep_minutes','INTEGER NOT NULL DEFAULT 30');
 ensureColumn('restaurants','special_hours','TEXT');
 ensureColumn('restaurants','auto_saturation_enabled','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('restaurants','auto_saturation_limit','INTEGER NOT NULL DEFAULT 5');
+ensureColumn('restaurants','public_address','INTEGER NOT NULL DEFAULT 1');
+ensureColumn('restaurants','public_phone','INTEGER NOT NULL DEFAULT 1');
+ensureColumn('restaurants','public_location','INTEGER NOT NULL DEFAULT 1');
 ensureColumn('products','category',"TEXT NOT NULL DEFAULT 'Comida'");
 ensureColumn('products','stock_enabled','INTEGER NOT NULL DEFAULT 0');
 ensureColumn('products','stock_quantity','INTEGER NOT NULL DEFAULT 0');
@@ -523,5 +526,6 @@ db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-10-phase-8','Borradores de menú importados y publicación manual segura');
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-10-pilot-hours','Horarios semanales operativos validados en servidor');
 db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-11-special-hours','Cierres y horarios especiales por fecha');
+db.prepare('INSERT OR IGNORE INTO schema_migrations(version,description) VALUES(?,?)').run('2026-09-12-restaurant-public-info','Privacidad y contacto público configurable del restaurante');
 
 module.exports = db;

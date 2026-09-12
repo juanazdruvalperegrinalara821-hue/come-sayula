@@ -249,6 +249,8 @@ header button{
         <button class="subir-foto" style="border:0" onclick="abrirMapaRestaurante()">📍 Elegir ubicación en mapa</button>
         <small id="estadoUbicacionRestaurante" style="display:block;margin-top:7px;color:#666"></small></div>
 
+        <div style="background:#fff8f1;border-radius:14px;padding:14px;min-width:min(100%,280px)"><strong>Información visible al cliente</strong><label style="display:block;margin-top:9px"><input id="direccionPublica" type="checkbox"> Mostrar dirección</label><label style="display:block;margin-top:7px"><input id="telefonoPublico" type="checkbox"> Mostrar teléfono y contacto</label><label style="display:block;margin-top:7px"><input id="ubicacionPublica" type="checkbox"> Permitir ver el punto en mapa</label><button class="subir-foto" style="border:0;margin-top:10px" onclick="guardarVisibilidadRestaurante()">Guardar visibilidad</button></div>
+
     </div>
 
     <div class="stats">
@@ -476,12 +478,15 @@ function mostrarRestaurante(datos){
     document.getElementById('estadoUbicacionRestaurante').textContent=datos.latitude!==null&&datos.latitude!==undefined&&datos.longitude!==null&&datos.longitude!==undefined&&Number.isFinite(Number(datos.latitude))&&Number.isFinite(Number(datos.longitude))
         ? '✅ Ubicación configurada para calcular envíos'
         : '⚠️ Configura la ubicación para calcular el costo de envío';
+    direccionPublica.checked=Boolean(datos.public_address);telefonoPublico.checked=Boolean(datos.public_phone);ubicacionPublica.checked=Boolean(datos.public_location);
     const nombres={open:'🟢 Abierto',saturated:'🟠 Saturado',paused:'⏸️ Pedidos pausados',closed:'🔴 Cerrado'};
     estadoNegocio.value=datos.operational_status||'open';minutosPreparacion.value=datos.prep_minutes||30;horarioEspecial.value=datos.special_hours||'';saturacionAutomatica.checked=Boolean(datos.auto_saturation_enabled);limiteSaturacion.value=datos.auto_saturation_limit||5;
     estadoOperacion.textContent=datos.auto_saturated?'🟠 Saturado automáticamente':(nombres[estadoNegocio.value]||nombres.open);
     estimadoOperacion.textContent=`Tiempo mostrado al cliente: ${Number(datos.effective_prep_minutes||minutosPreparacion.value)} minutos · ${Number(datos.active_order_count||0)} pedidos activos${datos.auto_saturation_enabled?' · saturación automática desde '+limiteSaturacion.value:''}${datos.special_hours?' · '+datos.special_hours:''}`;
 
 }
+
+async function guardarVisibilidadRestaurante(){try{await solicitudProducto('/api/restaurant/public-settings','PUT',{publicAddress:direccionPublica.checked,publicPhone:telefonoPublico.checked,publicLocation:ubicacionPublica.checked});alert('✅ Información pública actualizada.')}catch(e){alert('❌ '+e.message)}}
 
 function aplicarPermisos(acceso){
     perfilNegocio.style.display=acceso.isOwner?'flex':'none';

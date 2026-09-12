@@ -938,6 +938,9 @@ async function abrirRestaurante(id,nombre){
                         </p>
                         ${horario.configured?`<details style="margin-top:12px"><summary style="cursor:pointer;font-weight:bold">Ver horario semanal · hora de Sayula</summary><div style="margin-top:8px">${horario.hours.map(row=>`<div>${['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'][row.weekday]}: ${row.is_closed?'Cerrado':escapar(row.opens_at)+'–'+escapar(row.closes_at)}</div>`).join('')}</div></details>`:''}
                         ${datos.restaurant?.special_hours?`<p><strong>Horario especial:</strong> ${escapar(datos.restaurant.special_hours)}</p>`:''}
+                        ${datos.restaurant?.description?`<p>${escapar(datos.restaurant.description)}</p>`:''}
+                        ${datos.restaurant?.address?`<p><strong>📍 Dirección:</strong> ${escapar(datos.restaurant.address)}</p>`:''}
+                        <div style="display:flex;flex-wrap:wrap;gap:9px;margin-top:13px">${Number.isFinite(Number(datos.restaurant?.latitude))&&Number.isFinite(Number(datos.restaurant?.longitude))?`<a href="https://www.openstreetmap.org/?mlat=${Number(datos.restaurant.latitude)}&mlon=${Number(datos.restaurant.longitude)}#map=18/${Number(datos.restaurant.latitude)}/${Number(datos.restaurant.longitude)}" target="_blank" rel="noopener noreferrer" style="background:white;color:#9b3d04;padding:9px 12px;border-radius:9px;text-decoration:none;font-weight:bold">🗺️ Ver ubicación</a>`:''}${datos.restaurant?.phone?`<a href="tel:${String(datos.restaurant.phone).replace(/[^+\d]/g,'')}" style="background:white;color:#9b3d04;padding:9px 12px;border-radius:9px;text-decoration:none;font-weight:bold">📞 Llamar</a><a href="sms:${String(datos.restaurant.phone).replace(/[^+\d]/g,'')}" style="background:white;color:#9b3d04;padding:9px 12px;border-radius:9px;text-decoration:none;font-weight:bold">💬 Contactar restaurante</a>`:''}</div>
 
                     </div>
 
@@ -1707,7 +1710,7 @@ let coordenadasEntrega=null;
 let cotizacionEnvio=null;
 let solicitudPedidoId=null;
 
-function continuarPedido(){
+async function continuarPedido(){
     const token=sessionStorage.getItem('cs_token');
     const usuario=JSON.parse(sessionStorage.getItem('cs_user')||'null');
     if(!token||!usuario){location.href='/auth.html';return;}
@@ -1719,6 +1722,8 @@ function continuarPedido(){
         alert('Sólo puedes pedir productos de un restaurante a la vez.');return;
     }
 
+    let perfilPublico={};try{const response=await fetch('/api/restaurants/'+productos[0].restaurantId+'/menu'),data=await response.json();if(response.ok)perfilPublico=data.restaurant||{}}catch(e){}
+
     const total=productos.reduce((suma,item)=>suma+Number(item.price)*Number(item.quantity),0);
     const contieneAlcohol=productos.some(item=>item.category==='Bebidas alcohólicas');
     solicitudPedidoId=(globalThis.crypto?.randomUUID?globalThis.crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2));
@@ -1729,7 +1734,7 @@ function continuarPedido(){
     ventana.style.cssText='position:fixed;inset:0;background:#0008;z-index:2100;overflow:auto;padding:20px;display:grid;place-items:center';
     ventana.innerHTML=`<div style="width:min(620px,100%);background:white;border-radius:22px;padding:25px;box-shadow:0 22px 60px #0004">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:15px"><div><small style="color:#e85d04;font-weight:bold">ÚLTIMO PASO</small><h2 style="margin:5px 0">Confirmar entrega</h2></div><button onclick="cerrarCheckout();carrito()" style="border:0;background:#eee;width:38px;height:38px;border-radius:50%;cursor:pointer">✕</button></div>
-        <div style="background:#fff8f1;border-radius:14px;padding:15px;margin:17px 0"><strong>${escapar(productos[0].restaurantName||'Restaurante')}</strong>${productos.map(item=>`<div style="display:flex;justify-content:space-between;margin-top:8px"><span>${item.quantity} × ${escapar(item.name)}</span><strong>$${(Number(item.price)*Number(item.quantity)).toFixed(2)}</strong></div>`).join('')}<hr style="border:0;border-top:1px solid #eadfd5;margin:13px 0"><div style="display:flex;justify-content:space-between"><span>Subtotal</span><strong>$${total.toFixed(2)}</strong></div><div style="display:flex;justify-content:space-between;margin-top:7px"><span>Envío <small id="distanciaEnvio"></small></span><strong id="costoEnvio">Por calcular</strong></div><div style="display:flex;justify-content:space-between;font-size:20px;margin-top:10px"><strong>Total</strong><strong id="totalPedido" style="color:#e85d04">$${total.toFixed(2)}</strong></div></div>
+        <div style="background:#fff8f1;border-radius:14px;padding:15px;margin:17px 0"><strong>${escapar(productos[0].restaurantName||'Restaurante')}</strong>${perfilPublico.address?`<small style="display:block;color:#6f625b;margin-top:5px">📍 ${escapar(perfilPublico.address)}</small>`:''}${perfilPublico.phone?`<small style="display:block;color:#6f625b;margin-top:4px">📞 ${escapar(perfilPublico.phone)}</small>`:''}${productos.map(item=>`<div style="display:flex;justify-content:space-between;margin-top:8px"><span>${item.quantity} × ${escapar(item.name)}</span><strong>$${(Number(item.price)*Number(item.quantity)).toFixed(2)}</strong></div>`).join('')}<hr style="border:0;border-top:1px solid #eadfd5;margin:13px 0"><div style="display:flex;justify-content:space-between"><span>Subtotal</span><strong>$${total.toFixed(2)}</strong></div><div style="display:flex;justify-content:space-between;margin-top:7px"><span>Envío <small id="distanciaEnvio"></small></span><strong id="costoEnvio">Por calcular</strong></div><div style="display:flex;justify-content:space-between;font-size:20px;margin-top:10px"><strong>Total</strong><strong id="totalPedido" style="color:#e85d04">$${total.toFixed(2)}</strong></div></div>
         <form onsubmit="confirmarPedido(event)">
             <label style="display:block;font-weight:bold;margin:12px 0 6px">⭐ Direcciones guardadas</label><select id="direccionGuardada" onchange="usarDireccionGuardada(this.value)" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:11px;background:white"><option value="">Elegir una dirección guardada…</option></select>
             <label style="display:block;font-weight:bold;margin:12px 0 6px">📍 Dirección de entrega</label><textarea id="direccionPedido" required minlength="8" placeholder="Calle, número y colonia" style="width:100%;min-height:78px;padding:12px;border:1px solid #ddd;border-radius:11px;font:inherit"></textarea>
