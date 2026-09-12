@@ -292,6 +292,7 @@ ensureColumn('order_financials','reversed_at','TEXT');
 ensureColumn('order_financials','reversal_reason','TEXT');
 ensureColumn('order_financials','settlement_batch_id','INTEGER');
 ensureColumn('restaurant_members','can_use_pos','INTEGER NOT NULL DEFAULT 0');
+ensureColumn('restaurant_members','position_role',"TEXT NOT NULL DEFAULT 'custom'");
 ensureColumn('delivery_profiles','internal_number','TEXT');
 ensureColumn('delivery_profiles','photo_url','TEXT');
 ensureColumn('delivery_profiles','vehicle_type','TEXT');
