@@ -358,6 +358,8 @@ async function cargarDisponibles(){
 
         <div class="pedido">
 
+            ${p.recommended?'<div style="background:#e8f7ed;color:#176b37;padding:9px;border-radius:9px;font-weight:bold;margin-bottom:10px">⭐ Recomendado para ti</div>':''}
+
             <h3>
                 📦 Pedido #${p.id}
             </h3>
@@ -383,6 +385,8 @@ async function cargarDisponibles(){
                 🔒 La dirección exacta y los datos del cliente se mostrarán únicamente si aceptas el pedido.
 
                 ${p.distance_to_restaurant_km==null?'':'<br>📏 A '+Number(p.distance_to_restaurant_km).toFixed(1)+' km del restaurante'}
+
+                ${Array.isArray(p.recommendation_reasons)&&p.recommendation_reasons.length?'<br><small>💡 '+p.recommendation_reasons.map(escapar).join(' · ')+'</small>':''}
 
             </div>
 
@@ -430,6 +434,8 @@ async function cargarDisponibles(){
         </div>
 
     `).join('');
+
+    contenedor.insertAdjacentHTML('afterbegin','<p style="background:#eef7ff;color:#174a68;padding:10px;border-radius:9px"><strong>Orden recomendado:</strong> considera cercanía, espera, capacidad, vehículo, ruta y desempeño disponible. Tú decides qué pedido aceptar; no hay asignación automática.</p>');
 
 }
 

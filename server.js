@@ -919,6 +919,10 @@ app.patch('/api/admin/courier-cash-settlements/:id',auth,role(['admin']),(req,re
 
 app.get('/api/delivery/orders/available',auth,role(['delivery']),(req,res)=>{
 
+    const profile=db.prepare("SELECT status,vehicle_type,COALESCE(max_active_orders,1) max_active_orders FROM delivery_profiles WHERE delivery_user_id=? AND verification_status='verified'").get(req.user.id);
+    const activeOrders=db.prepare("SELECT o.delivery_latitude,o.delivery_longitude FROM delivery_assignments da JOIN orders o ON o.id=da.order_id WHERE da.delivery_user_id=? AND da.status='accepted' AND o.status IN ('assigned','delivering')").all(req.user.id);
+    if(!profile||profile.status==='offline'||activeOrders.length>=Number(profile.max_active_orders))return res.json({locationReady:false,capacityAvailable:false,orders:[]});
+
     const pedidos = db.prepare(`
         SELECT
             o.id,o.total,o.subtotal,o.delivery_fee,o.distance_km,o.payment_method,
@@ -935,14 +939,13 @@ app.get('/api/delivery/orders/available',auth,role(['delivery']),(req,res)=>{
             ON da.order_id = o.id
         WHERE o.status = 'ready'
         AND (o.scheduled_for IS NULL OR julianday(o.scheduled_for)<=julianday('now','+' || ? || ' minutes'))
-        AND COALESCE((SELECT status FROM delivery_profiles WHERE delivery_user_id=?),'offline')='available'
         AND NOT EXISTS(SELECT 1 FROM delivery_rejections dr WHERE dr.order_id=o.id AND dr.delivery_user_id=?)
         AND (
             da.id IS NULL
             OR da.status = 'available'
         )
         ORDER BY o.id ASC
-    `).all(COURIER_SCHEDULE_WINDOW_MINUTES,req.user.id,req.user.id);
+    `).all(COURIER_SCHEDULE_WINDOW_MINUTES,req.user.id);
 
     const items = db.prepare(`
         SELECT *
@@ -950,15 +953,27 @@ app.get('/api/delivery/orders/available',auth,role(['delivery']),(req,res)=>{
         WHERE order_id = ?
     `);
 
-    const deliveryLocation=db.prepare('SELECT latitude,longitude,updated_at FROM delivery_locations WHERE delivery_user_id=?').get(req.user.id);
-    const result=pedidos.map(p => ({
+    const deliveryLocation=db.prepare("SELECT latitude,longitude,updated_at FROM delivery_locations WHERE delivery_user_id=? AND datetime(updated_at)>=datetime('now','-30 minutes')").get(req.user.id);
+    const performance=db.prepare("SELECT COUNT(rv.delivery_rating) ratings,ROUND(AVG(rv.delivery_rating),1) rating FROM order_reviews rv JOIN orders o ON o.id=rv.order_id WHERE rv.delivery_user_id=? AND o.is_demo=0").get(req.user.id);
+    const result=pedidos.map(p => {
+        const pickupDistance=deliveryLocation&&p.restaurant_latitude!=null&&p.restaurant_longitude!=null?Math.round(distanceKm(Number(deliveryLocation.latitude),Number(deliveryLocation.longitude),Number(p.restaurant_latitude),Number(p.restaurant_longitude))*100)/100:null;
+        const routeDistance=activeOrders.length&&p.restaurant_latitude!=null&&p.restaurant_longitude!=null?Math.min(...activeOrders.filter(order=>order.delivery_latitude!=null&&order.delivery_longitude!=null).map(order=>distanceKm(Number(order.delivery_latitude),Number(order.delivery_longitude),Number(p.restaurant_latitude),Number(p.restaurant_longitude)))):null;
+        const waitingMinutes=Math.max(0,Math.floor((Date.now()-(sqliteInstant(p.created_at)?.getTime()||Date.now()))/60000)),reasons=[];
+        let score=60+Math.min(20,waitingMinutes/3)-activeOrders.length*20;
+        if(pickupDistance!==null){score-=Math.min(30,pickupDistance*4);reasons.push(pickupDistance<=2?'Recogida cercana':pickupDistance<=5?'Distancia moderada':'Recogida lejana');}else reasons.push('Activa ubicación para mejorar la recomendación');
+        if(Number(performance.ratings)>=5){score+=(Number(performance.rating)-4)*8;reasons.push('Considera tu historial de entregas');}
+        if(routeDistance!==null&&Number.isFinite(routeDistance)){if(routeDistance<=2){score+=12;reasons.push('Compatible con tu ruta activa');}else if(routeDistance<=5){score+=5;reasons.push('Cerca de tu ruta activa');}}
+        if((profile.vehicle_type==='walking'&&Number(p.distance_km)>4)||(profile.vehicle_type==='bicycle'&&Number(p.distance_km)>8)){score-=18;reasons.push('Trayecto largo para tu vehículo');}
+        if(waitingMinutes>=15)reasons.push('Pedido con tiempo de espera');
+        return {
             ...p,
             items: items.all(p.id),
-            distance_to_restaurant_km:deliveryLocation&&p.restaurant_latitude!=null&&p.restaurant_longitude!=null
-                ? Math.round(distanceKm(Number(deliveryLocation.latitude),Number(deliveryLocation.longitude),Number(p.restaurant_latitude),Number(p.restaurant_longitude))*100)/100
-                : null
-        })).sort((a,b)=>(a.distance_to_restaurant_km??Number.MAX_VALUE)-(b.distance_to_restaurant_km??Number.MAX_VALUE)||a.id-b.id);
-    res.json({locationReady:Boolean(deliveryLocation),orders:result});
+            distance_to_restaurant_km:pickupDistance,
+            recommendation_score:Math.max(0,Math.min(100,Math.round(score))),
+            recommendation_reasons:reasons.slice(0,3)
+        };
+    }).sort((a,b)=>b.recommendation_score-a.recommendation_score||a.id-b.id).map((order,index)=>({...order,recommended:index===0}));
+    res.json({locationReady:Boolean(deliveryLocation),capacityAvailable:true,activeOrders:activeOrders.length,maxActiveOrders:Number(profile.max_active_orders),automaticAssignment:false,orders:result});
 
 });
 
@@ -976,7 +991,7 @@ app.post('/api/delivery/orders/:id/accept',auth,role(['delivery']),(req,res)=>{
     try{
 
         const resultado = db.transaction(()=>{
-            const profile=db.prepare("SELECT status,verification_status,max_active_orders FROM delivery_profiles WHERE delivery_user_id=?").get(req.user.id);if(!profile||profile.status!=='available')throw new Error('Activa tu disponibilidad antes de aceptar pedidos');if(profile.verification_status!=='verified')throw new Error('Tu perfil de repartidor debe estar verificado');
+            const profile=db.prepare("SELECT status,verification_status,max_active_orders FROM delivery_profiles WHERE delivery_user_id=?").get(req.user.id);if(!profile||!['available','busy'].includes(profile.status))throw new Error('Activa tu disponibilidad antes de aceptar pedidos');if(profile.verification_status!=='verified')throw new Error('Tu perfil de repartidor debe estar verificado');
 
             const active=db.prepare("SELECT COUNT(*) total FROM delivery_assignments da JOIN orders o ON o.id=da.order_id WHERE da.delivery_user_id=? AND da.status='accepted' AND o.status IN ('assigned','delivering') AND da.order_id<>?").get(req.user.id,orderId);
             if(active.total>=Math.max(1,Number(profile.max_active_orders)||1))throw new Error('Alcanzaste tu límite de entregas activas');
