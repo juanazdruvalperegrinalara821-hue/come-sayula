@@ -199,6 +199,17 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens(
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS account_deletion_requests(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    reason TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','cancelled','completed')),
+    requested_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_account_deletion_pending ON account_deletion_requests(user_id) WHERE status='pending';
 CREATE TABLE IF NOT EXISTS rate_limits(
     key TEXT PRIMARY KEY,
     count INTEGER NOT NULL,

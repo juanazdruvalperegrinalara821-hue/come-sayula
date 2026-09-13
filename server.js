@@ -337,6 +337,16 @@ app.post('/api/auth/logout',auth,rateLimit('logout',20,15*60*1000),(req,res)=>{
     audit(req,'sessions_revoked','user',req.user.id);
     res.json({ok:true,message:'Todas las sesiones fueron cerradas de forma segura.'});
 });
+app.get('/api/account/deletion-request',auth,(req,res)=>res.json(db.prepare("SELECT id,status,reason,requested_at,updated_at FROM account_deletion_requests WHERE user_id=? ORDER BY id DESC LIMIT 1").get(req.user.id)||null));
+app.post('/api/account/deletion-request',auth,rateLimit('account-deletion',3,24*60*60*1000),(req,res)=>{
+    const confirmation=String(req.body.confirmation||'').trim().toUpperCase(),reason=String(req.body.reason||'').trim().slice(0,500);
+    if(confirmation!=='ELIMINAR')return res.status(400).json({error:'Escribe ELIMINAR para confirmar la solicitud'});
+    if(db.prepare("SELECT id FROM account_deletion_requests WHERE user_id=? AND status='pending'").get(req.user.id))return res.status(409).json({error:'Ya existe una solicitud pendiente'});
+    const result=db.prepare("INSERT INTO account_deletion_requests(user_id,role,reason) VALUES(?,?,?)").run(req.user.id,req.user.role,reason);
+    audit(req,'account_deletion_requested','account_deletion_request',Number(result.lastInsertRowid));notifyAdmins(null,'account_deletion_requested','Solicitud de eliminación de cuenta','Una persona solicitó eliminar su cuenta. Requiere verificar identidad, retención y datos vinculados.','/admin.html');
+    res.status(201).json({ok:true,id:Number(result.lastInsertRowid),message:'Recibimos tu solicitud. Soporte revisará la identidad y te responderá por el correo de tu cuenta.'});
+});
+app.delete('/api/account/deletion-request',auth,(req,res)=>{const result=db.prepare("UPDATE account_deletion_requests SET status='cancelled',updated_at=CURRENT_TIMESTAMP WHERE user_id=? AND status='pending'").run(req.user.id);if(!result.changes)return res.status(404).json({error:'No existe una solicitud pendiente'});audit(req,'account_deletion_cancelled','user',req.user.id);res.json({ok:true,message:'La solicitud fue cancelada.'})});
 app.get('/api/notifications',auth,(req,res)=>{const after=Math.max(0,Number(req.query.after)||0);const rows=db.prepare('SELECT id,order_id,type,title,message,target_url,read_at,created_at FROM notifications WHERE user_id=? AND id>? ORDER BY id DESC LIMIT 50').all(req.user.id,after);const unread=db.prepare('SELECT COUNT(*) total FROM notifications WHERE user_id=? AND read_at IS NULL').get(req.user.id).total;res.json({notifications:rows,unread});});
 app.patch('/api/notifications/read',auth,(req,res)=>{const id=req.body.id==null?null:Number(req.body.id);if(id!==null&&(!Number.isInteger(id)||id<=0))return res.status(400).json({error:'Notificación inválida'});if(id===null)db.prepare('UPDATE notifications SET read_at=CURRENT_TIMESTAMP WHERE user_id=? AND read_at IS NULL').run(req.user.id);else db.prepare('UPDATE notifications SET read_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?').run(id,req.user.id);res.json({ok:true});});
 app.get('/api/push/public-key',auth,(req,res)=>res.json({publicKey:vapidKeys.publicKey}));
