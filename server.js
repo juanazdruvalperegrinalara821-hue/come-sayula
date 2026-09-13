@@ -332,6 +332,11 @@ app.patch('/api/auth/password',auth,rateLimit('change-password',8,30*60*1000),as
     const updated=db.prepare('SELECT * FROM users WHERE id=?').get(user.id);audit(req,'password_changed','user',user.id);
     res.json({ok:true,message:'Contraseña actualizada. Las demás sesiones fueron cerradas.',token:signToken(updated),user:publicUser(updated)});
 });
+app.post('/api/auth/logout',auth,rateLimit('logout',20,15*60*1000),(req,res)=>{
+    db.transaction(()=>{db.prepare('UPDATE users SET session_version=session_version+1 WHERE id=?').run(req.user.id);db.prepare('DELETE FROM push_subscriptions WHERE user_id=?').run(req.user.id);})();
+    audit(req,'sessions_revoked','user',req.user.id);
+    res.json({ok:true,message:'Todas las sesiones fueron cerradas de forma segura.'});
+});
 app.get('/api/notifications',auth,(req,res)=>{const after=Math.max(0,Number(req.query.after)||0);const rows=db.prepare('SELECT id,order_id,type,title,message,target_url,read_at,created_at FROM notifications WHERE user_id=? AND id>? ORDER BY id DESC LIMIT 50').all(req.user.id,after);const unread=db.prepare('SELECT COUNT(*) total FROM notifications WHERE user_id=? AND read_at IS NULL').get(req.user.id).total;res.json({notifications:rows,unread});});
 app.patch('/api/notifications/read',auth,(req,res)=>{const id=req.body.id==null?null:Number(req.body.id);if(id!==null&&(!Number.isInteger(id)||id<=0))return res.status(400).json({error:'Notificación inválida'});if(id===null)db.prepare('UPDATE notifications SET read_at=CURRENT_TIMESTAMP WHERE user_id=? AND read_at IS NULL').run(req.user.id);else db.prepare('UPDATE notifications SET read_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?').run(id,req.user.id);res.json({ok:true});});
 app.get('/api/push/public-key',auth,(req,res)=>res.json({publicKey:vapidKeys.publicKey}));

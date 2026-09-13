@@ -918,11 +918,9 @@ async function cambiarEstado(id, estado){
 
 }
 
-function cerrarSesion(){
+async function cerrarSesion(){
 
-    sessionStorage.removeItem('cs_token');
-
-    sessionStorage.removeItem('cs_user');
+    await CS_SESSION.logout();
 
     location.href = '/home3.html';
 

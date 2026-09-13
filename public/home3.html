@@ -1858,8 +1858,7 @@ async function cerrarSesion(){
         return;
     }
 
-    sessionStorage.removeItem('cs_token');
-    sessionStorage.removeItem('cs_user');
+    await CS_SESSION.logout();
 
     alert('✅ Sesión cerrada correctamente.');
 
