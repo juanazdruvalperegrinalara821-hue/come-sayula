@@ -147,6 +147,7 @@ app.use((req,res,next)=>{
 app.use(express.json({limit:'6mb',strict:true}));
 app.use((req,res,next)=>{if(req.path.startsWith('/api/'))res.setHeader('Cache-Control','no-store');next();});
 app.use('/uploads',express.static(uploadsDir,{dotfiles:'deny',fallthrough:false,maxAge:'7d'}));
+app.get('/.well-known/assetlinks.json',(req,res)=>res.sendFile(path.join(__dirname,'public','.well-known','assetlinks.json')));
 app.use(express.static(path.join(__dirname,'public'),{dotfiles:'deny',index:'index.html'}));
 
 const rateLimit=(name,max,windowMs)=>(req,res,next)=>{

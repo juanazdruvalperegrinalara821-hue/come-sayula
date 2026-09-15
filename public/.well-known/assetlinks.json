@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "mx.comesayula.app",
+      "sha256_cert_fingerprints": [
+        "60:18:B1:A0:79:BB:43:BD:C4:6F:1B:A6:EC:9B:2E:D4:33:02:43:BE:04:75:B1:DF:85:15:F0:78:64:0A:CC:67"
+      ]
+    }
+  }
+]
